@@ -543,7 +543,24 @@ if ($hibrida) {
         Say 'SE ele pedir "press ENTER to start", aperte Enter uma vez - depois disso' Yellow
         Say 'nao toque mais em nada ate ele terminar.' Yellow
         Push-Location (Split-Path $agaExe)
-        Start-Process -FilePath $agaExe -Wait -NoNewWindow
+        # -Wait puro nao serve: se o driver de video travar no meio da medicao, o
+        # AutoGpuAffinity nunca encerra e o script fica preso pra sempre - foi o que
+        # aconteceu numa maquina real. Limite generoso (1 min por nucleo + 5 min de
+        # folga) e, se estourar, encerra e segue. A limpeza da afinidade da placa
+        # ja esta registrada no DESFAZER desde antes de comecar.
+        $limiteSeg = [int](($threads * 60) + 300)
+        $procAga = Start-Process -FilePath $agaExe -PassThru -NoNewWindow
+        if (-not $procAga.WaitForExit($limiteSeg * 1000)) {
+            Say ''
+            Say ("O benchmark passou de $([math]::Round($limiteSeg / 60)) minutos sem terminar.") Red
+            Say 'Isso costuma significar que o driver de video travou. Vou encerrar e' Red
+            Say 'seguir sem o resultado da medicao.' Red
+            Say ''
+            Say 'IMPORTANTE: rode o DESFAZER da Area de Trabalho e REINICIE - ele limpa' Yellow
+            Say 'a configuracao que o benchmark deixou na sua placa de video.' Yellow
+            try { $procAga.Kill() } catch { }
+            Start-Sleep -Seconds 3
+        }
         Pop-Location
 
         # ---- analisar os CSVs ----
@@ -847,7 +864,30 @@ if ($aplicarAfinidade) {
                 Remove-Item $inst -Force -EA SilentlyContinue
             } else {
             Say 'Instalando (modo silencioso)...'
-            Start-Process $inst -ArgumentList '/S' -Wait
+            # NAO usar -Wait aqui. O instalador da Bitsum em modo silencioso nao
+            # encerra de forma confiavel: numa maquina real ele instalou o programa
+            # (aparecia no menu Iniciar) e o processo continuou vivo, deixando o
+            # script parado em "Instalando..." pra sempre. Em vez de confiar no
+            # encerramento dele, espera pelo RESULTADO: o executavel aparecer em
+            # disco. Isso e o que realmente indica que a instalacao terminou.
+            Start-Process $inst -ArgumentList '/S'
+            for ($i = 1; $i -le 24; $i++) {          # ate 2 minutos
+                if (Test-Path $plExe) { break }
+                Start-Sleep -Seconds 5
+                if ($i -eq 6)  { Say '  ainda instalando... (normal, pode levar 1 min)' Gray }
+                if ($i -eq 18) { Say '  demorando mais que o esperado. Se aparecer alguma janela de' Yellow
+                                 Say '  instalacao atras desta, conclua ela.' Yellow }
+            }
+            if (Test-Path $plExe) {
+                Say 'Process Lasso instalado.' Green
+            } else {
+                Say 'Nao consegui confirmar a instalacao em 2 minutos. Vou seguir e tentar' Yellow
+                Say 'configurar de qualquer forma - se falhar, instale pelo site da Bitsum' Yellow
+                Say 'e rode este script de novo (ele pula o download se ja estiver la).' Yellow
+            }
+            # o instalador pode ter ficado vivo mesmo tendo terminado o servico;
+            # nao deixa processo orfao segurando o arquivo baixado
+            Get-Process -Name 'processlasso_setup' -EA SilentlyContinue | Stop-Process -Force -EA SilentlyContinue
             $plInstaladoAgora = $true
 
             # O prolasso.ini NAO nasce com o instalador - quem cria e o proprio
@@ -866,12 +906,12 @@ if ($aplicarAfinidade) {
             }
 
             if ($plIni) {
-                Say ("Process Lasso instalado. Config: $plIni") Green
+                Say ("Configuracao encontrada: $plIni") Green
             } else {
                 Say ''
                 Say 'ATENCAO: o Process Lasso foi instalado, mas o arquivo de configuracao' Red
-                Say 'apareceu - entao a parte que MAIS IMPORTA nao foi aplicada:' Red
-        Say '  prioridade do jogo + divisao de nucleos + ajuste do ProBalance' Red
+                Say 'dele nao apareceu - entao isto NAO foi aplicado:' Red
+                Say '  prioridade do jogo + divisao de nucleos + ajuste do ProBalance' Red
                 Say ''
                 Say 'O QUE FAZER: abra o Process Lasso, feche, e rode o LoLBoost de novo.' Yellow
                 Say 'Na segunda vez ele pula o download e vai direto pra configuracao.' Yellow
