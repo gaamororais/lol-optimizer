@@ -209,19 +209,44 @@ qualquer uma — o resto continua. As perguntas são em português, e `S` é o s
 |---|---|
 | **1** | Vê que hardware você tem, e te pergunta se a sua placa de vídeo é dedicada ou é a do processador |
 | **2** | Ajustes simples e reversíveis: desliga a gravação de tela em segundo plano do Windows, coloca o plano de energia em Alto Desempenho, e ajusta o arquivo de configuração do jogo |
-| **3** | **Mede seus núcleos, um por um**, pra descobrir qual é o melhor pro driver de vídeo. É a parte de 10 minutos |
-| **4** | Coloca o driver de vídeo no núcleo que ganhou **na sua medição** |
+| **3** | Separa o driver de vídeo do núcleo do jogo. **Aqui você escolhe entre 3 opções** — explicado abaixo |
+| **4** | Aplica essa separação |
 | **5** | Configura o Process Lasso: prioridade Alta pro jogo, e "deixa esse em paz" no ProBalance |
-| **6** | Escreve o `DESFAZER.ps1`, que reverte tudo |
+| **6** | Escreve o desfazer e cria o atalho na Área de Trabalho |
 
-> ### ⚠️ Na etapa 3 a tela vai piscar, e pode ficar preta por alguns segundos
+### A escolha da etapa 3, que é a única com risco
+
+São **duas coisas diferentes**, e o script te deixa escolher quanto quer:
+
+- **Separar** o driver do núcleo do jogo → é de onde vem o ganho. **Não reinicia nada**, só passa a
+  valer no próximo boot. Risco zero.
+- **Medir** qual núcleo é o melhor → refinamento em cima da separação. Exige **reiniciar o driver de
+  vídeo uma vez por núcleo**, e é aqui que mora todo o risco.
+
+```
+[1] SEPARAR SEM MEDIR  - recomendado. Sem risco, a tela nao pisca.
+[2] MEDIR E SEPARAR    - o ideal, se voce topa o risco.
+[3] NAO FAZER NADA AQUI
+```
+
+> ### ⚠️ Se você escolher a opção 2, a tela vai piscar e pode ficar preta
 >
-> Isso é esperado — pra medir cada núcleo, o driver de vídeo é reiniciado. Acontece uma vez por
-> núcleo. **Não mexa no PC durante essa parte.**
+> É esperado: pra medir cada núcleo, o driver de vídeo é reiniciado. **Não mexa no PC durante essa
+> parte.**
 >
-> Existe um risco pequeno do driver travar em vez de voltar. Se acontecer, **reinicie o PC pelo
-> botão** e rode de novo. Se você preferir não correr esse risco, **responda N nessa etapa** — a
-> etapa 5, que é a que mais rende, funciona sem ela.
+> **Existe risco real do driver travar e não voltar** — isso já aconteceu numa máquina testada, e o
+> dono ficou sem imagem até desligar no botão. Não é risco teórico.
+>
+> **Se a tela ficar preta:** aperte `Win`+`Ctrl`+`Shift`+`B` (reinicia o driver de vídeo). Não
+> voltou? Troque o cabo de porta na placa. Não voltou? Segure o power 10 s e ligue de novo.
+>
+> **O script se recupera sozinho.** Se ele perceber que a medição empacou, ele encerra, limpa a
+> configuração que ela deixou na sua placa e tenta trazer o vídeo de volta. E se o PC precisar ser
+> desligado no botão, na próxima vez que você abrir o script ele detecta que a medição anterior não
+> terminou e **limpa automaticamente**, sem você precisar fazer nada.
+>
+> Ainda assim: **a opção 1 é recomendada**, e não é consolo. Ela entrega a separação — que é o ganho
+> principal — com risco zero. A medição só melhora a escolha do núcleo.
 
 ### 5. Reinicie o PC
 

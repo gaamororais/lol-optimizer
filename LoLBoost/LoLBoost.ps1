@@ -206,7 +206,10 @@ function LimpaAfinidadeVideo {
 
 function TentaVoltarVideo {
     foreach ($dv in (DispositivosVideo)) {
-        try { & pnputil.exe /restart-device ('"' + $dv.InstanceId + '"') 2>$null | Out-Null } catch { }
+        # NAO montar as aspas na mao: o PowerShell ja passa cada argumento inteiro,
+        # e aspas literais viriam DENTRO do valor, fazendo o pnputil procurar um
+        # dispositivo cujo ID comeca com aspa - e nao achar nada, em silencio.
+        try { & pnputil.exe /restart-device $dv.InstanceId 2>$null | Out-Null } catch { }
     }
 }
 

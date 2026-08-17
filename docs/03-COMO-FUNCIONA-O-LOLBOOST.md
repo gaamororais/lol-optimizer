@@ -125,7 +125,35 @@ foreach ($d in (Get-PSDrive -PSProvider FileSystem).Name) {
 O script **aborta esta etapa** se detectar qualquer processo da Riot rodando — o client
 sobrescreveria a edição ao fechar.
 
-### Etapa 3 — Benchmark e escolha do núcleo
+### Etapa 3 — Separar o driver do núcleo do jogo
+
+**Esta etapa foi reescrita depois de dois incidentes em campo.** Ver
+[a seção sobre eles](#o-que-dois-incidentes-em-campo-mudaram) no fim deste documento.
+
+A separação em duas coisas distintas é a mudança mais importante do projeto até agora:
+
+| | O que é | Risco |
+|---|---|---|
+| **Separar** | Escrever no registro em qual núcleo o driver de vídeo deve rodar. **Não reinicia driver nenhum** — só passa a valer no boot seguinte | Nenhum |
+| **Medir** | Descobrir qual núcleo é o melhor. Exige **reiniciar o driver uma vez por núcleo** | Tela preta se o driver não voltar |
+
+Antes as duas estavam amarradas numa pergunta sim/não. Quem recusava o benchmark — a escolha
+sensata em máquina que não pode ficar fora do ar — perdia **também** a separação, que é de onde
+vem o ganho principal. Era o pior enquadramento possível: o risco e o benefício no mesmo botão.
+
+Agora são três opções, e a **segura é a recomendada e o default** de resposta não reconhecida:
+
+```
+[1] SEPARAR SEM MEDIR  - recomendado. Sem risco, a tela nao pisca.
+[2] MEDIR E SEPARAR    - o ideal, se voce topa o risco.
+[3] NAO FAZER NADA AQUI
+```
+
+Na opção 1 o driver vai para a CPU 1 (ou 0 sem SMT) e o jogo sai de cima dela. O script diz na
+tela que **não sabe** se aquele é o melhor núcleo da máquina — para isso só medindo — mas que ele
+deixa de disputar com o jogo, que é o que resolve.
+
+#### Quando a opção 2 é escolhida
 
 Baixa o AutoGpuAffinity direto da **API oficial de releases do GitHub** (não de mirror), roda
 o benchmark e analisa os resultados.
@@ -149,7 +177,44 @@ Low01 = 1000 / $p999
 A média é deliberadamente ignorada como critério — no caso real ela variou apenas 2,9% entre
 o melhor e o pior núcleo, o que é ruído estatístico.
 
-### Etapa 4 — Fixar o driver gráfico
+#### Recuperação automática de driver travado
+
+Duas camadas, porque uma sozinha não cobre o pior caso.
+
+**Camada 1 — vigia por progresso durante a medição.** O AutoGpuAffinity grava um CSV por núcleo
+testado. Se esses arquivos param de aparecer, ele empacou — quase sempre porque o driver de vídeo
+travou. O gatilho é **150 s sem nenhum progresso** (com 90 s de carência inicial, porque o primeiro
+CSV demora), mais um limite total de `threads × 60 + 300` segundos como rede.
+
+Vigiar progresso é melhor que vigiar tempo total: detecta em ~2 minutos em vez de esperar os 17
+minutos do limite. Quando dispara:
+
+1. Consulta o **evento 4101** do log do Windows (*"o driver de vídeo parou de responder"*) desde o
+   início da medição, e informa se foi isso mesmo ou se apenas parou de progredir
+2. Encerra o AutoGpuAffinity
+3. **Limpa a configuração que ele deixou na placa**
+4. Tenta trazer o vídeo de volta com `pnputil /restart-device`
+5. Reporta o `Status` dos dispositivos de vídeo depois da tentativa
+6. **Segue pelo caminho seguro** (separar sem medir), em vez de abortar
+
+**Camada 2 — marcador em disco.** Se o driver travar de um jeito que impeça qualquer recuperação, a
+camada 1 morre junto com a sessão: não existe software que sobreviva a um desligamento no botão. Por
+isso o script grava `medicao-em-andamento.txt` em `%LOCALAPPDATA%\LoLBoost` **antes** de medir e o
+apaga quando termina.
+
+Se esse arquivo existir na execução seguinte, a medição anterior não terminou. O script então
+**limpa a placa automaticamente, sem perguntar nada**, e explica o que aconteceu e por quê.
+
+É a camada 2 que resolve o caso real: numa máquina de teste o driver travou, o PC foi desligado no
+botão, e a placa ficou presa num núcleo **sem ninguém saber** — só foi descoberto porque alguém
+pensou em conferir. Agora a própria ferramenta detecta e conserta na próxima abertura.
+
+> **Por que `pnputil /restart-device` e não `Restart-PnpDevice`:** o cmdlet `Restart-PnpDevice`
+> **não existe no Windows 10** (verificado: ausente no build 19045). O `pnputil` existe do Windows 10
+> 1903 em diante e no 11. Se essa parte tivesse sido escrita testando só em Windows 11, a recuperação
+> automática falharia exatamente na máquina onde ela precisa funcionar.
+
+### Etapa 4 — Colocar o driver de vídeo no núcleo escolhido
 
 Descobre o Instance ID do dispositivo **daquela máquina** e monta a máscara de bits:
 
@@ -324,15 +389,71 @@ Toda ação reversível foi acumulada numa lista durante a execução. O script 
 
 ---
 
+## O que dois incidentes em campo mudaram
+
+O projeto passou por três rodadas de revisão adversarial antes de ser publicado, e foi liberado com
+veredito de "pode divulgar". Na **primeira máquina de teste real** — um i5-10400F com RTX 3060 no
+Windows 10 — deu dois problemas seguidos. Vale registrar porque nenhum dos dois era desconhecido, e
+os dois estavam em pontos que eu considerava testados.
+
+### Incidente 1 — o driver de vídeo travou na primeira troca de núcleo
+
+Tela preta, PC ligado, dono sem saber o que fazer. O risco estava documentado no README e o autor da
+ferramenta de terceiro avisa dele. Mas duas coisas **não** estavam previstas:
+
+1. **A placa ficou presa num núcleo.** O benchmark fixa o driver em cada núcleo para testar e
+   restaura no fim; morrendo no meio, ele deixa a última configuração aplicada. E o `DESFAZER` **não
+   cobria isso**, porque quem escreveu no registro foi a ferramenta de terceiro, não o script. Foi
+   preciso um comando manual para descobrir e limpar. → Corrigido: a limpeza entrou no undo,
+   registrada **antes** de a medição começar, e existe recuperação automática nas duas camadas
+   descritas na Etapa 3.
+2. **O aviso chegava tarde.** O texto dizia "se travar, reinicie o PC" — mas a pessoa lê isso
+   **antes**, esquece, e quando precisa está de frente para uma tela preta. → Corrigido: o aviso
+   agora **ensina o resgate** (`Win`+`Ctrl`+`Shift`+`B`, trocar o cabo de porta, e por último o
+   power de 10 s) na tela, antes de começar, como passo numerado.
+
+O aprendizado de enquadramento é o maior: o risco e o benefício estavam **no mesmo botão**. Separar
+"medir" de "separar" fez o risco virar opcional, e o benefício principal continuar acessível a quem
+não quer correr risco nenhum.
+
+### Incidente 2 — o script travou para sempre em "Instalando..."
+
+`Start-Process $inst -ArgumentList '/S' -Wait`. O instalador do Process Lasso em modo silencioso não
+encerra de forma confiável: o programa instalou (aparecia no menu Iniciar) e o script ficou parado
+indefinidamente esperando o processo sair.
+
+**E eu tinha testado essa etapa.** Mas o teste que escrevi usava `Start-Process` **sem** `-Wait`, com
+verificação por tempo — justamente para medir se a flag `/S` era silenciosa. O código publicado usava
+`-Wait`. Ou seja: **o teste exercitou um caminho diferente do que o código fazia, e passou verde
+enquanto o código real travava.**
+
+→ Corrigido: o script espera pelo **resultado** (o executável aparecer em disco, com limite de 2 min)
+em vez de confiar no encerramento do instalador. E não sobrou nenhum `-Wait` sem limite no script — o
+do próprio benchmark também ganhou vigia, porque ele tinha o mesmo defeito latente.
+
+### A lição que vale mais que as duas correções
+
+É a mesma que a segunda revisão já havia apontado dentro dos testes automatizados — testes que
+exercitavam reimplementações locais em vez das funções publicadas, e por isso continuariam verdes se
+o script mudasse. Eu corrigi aquele caso e **cometi o mesmo erro no teste manual**, duas vezes.
+
+**Teste que não roda o código real não é teste, é ensaio.** Vale para o arquivo de testes e vale para
+o comando que se digita no PowerShell para "conferir se funciona".
+
+---
+
 ## Limitações conhecidas
 
 | Limitação | Situação |
 |---|---|
-| CPUs híbridas | Detectadas, mas a afinidade é pulada — exige trabalho manual |
+| CPUs híbridas | Detectadas, mas a divisão de núcleos é pulada — exige trabalho manual |
+| Híbridas AMD (Zen 4c/5c) | **Não** detectadas: têm SMT, então passam como uniformes |
 | Benchmark GPU-bound | O AutoGpuAffinity usa liblava (Vulkan), não o LoL. Serve para **ranquear** núcleos, mas o valor absoluto não representa o jogo |
+| Opção "separar sem medir" | Garante a separação, **não** a escolha ótima do núcleo |
 | `EnableParticleOptimizations` | Chave não documentada pela Riot; pode ser ignorada pelo engine atual |
-| Reinício do driver | O autor do AutoGpuAffinity alerta para o risco do driver travar |
+| Reinício do driver | Risco **confirmado em campo**, não apenas teórico. Mitigado pela recuperação em duas camadas, mas não eliminado |
 | Process Lasso | Precisa continuar rodando para as regras valerem |
+| Teste ponta a ponta | Nenhuma execução completou as 6 etapas ainda. Componentes validados individualmente |
 
 ---
 
@@ -343,6 +464,8 @@ Toda ação reversível foi acumulada numa lista durante a execução. O script 
 - [ ] Aplicar a exclusão do ProBalance a **outros jogos**, não só ao LoL
 - [ ] Coleta opcional de antes/depois para validar o ganho de verdade
 - [ ] Internacionalização (o script está em português)
+- [ ] Medir os núcleos **sem reiniciar o driver** — se existir caminho técnico para isso, elimina o
+      único risco relevante que sobrou no projeto
 
 ---
 

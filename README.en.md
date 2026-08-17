@@ -209,19 +209,45 @@ rest continues. **The prompts are in Portuguese, and `S` means yes.**
 |---|---|
 | **1** | Checks what hardware you have, and asks whether your graphics card is dedicated or built into the processor |
 | **2** | Simple, reversible tweaks: turns off Windows background screen recording, sets the power plan to High Performance, and adjusts the game's config file |
-| **3** | **Measures your cores, one by one**, to find the best one for the graphics driver. This is the 10-minute part |
-| **4** | Puts the graphics driver on the core that won **in your measurement** |
+| **3** | Separates the graphics driver from the game's core. **Here you pick between 3 options** — explained below |
+| **4** | Applies that separation |
 | **5** | Configures Process Lasso: High priority for the game, and "leave this one alone" in ProBalance |
-| **6** | Writes `DESFAZER.ps1` (the undo script), which reverts everything |
+| **6** | Writes the undo script and creates the Desktop shortcut |
 
-> ### ⚠️ In stage 3 the screen will flicker, and may go black for a few seconds
+### The stage 3 choice, the only part with any risk
+
+These are **two different things**, and the script lets you choose how far to go:
+
+- **Separating** the driver from the game's core → this is where the gain comes from. It **restarts
+  nothing**, it just takes effect on your next boot. Zero risk.
+- **Measuring** which core is best → a refinement on top of the separation. It requires **restarting
+  the graphics driver once per core**, and this is where all the risk lives.
+
+```
+[1] SEPARAR SEM MEDIR  - separate without measuring (recommended, no risk, no flicker)
+[2] MEDIR E SEPARAR    - measure and separate (ideal, if you accept the risk)
+[3] NAO FAZER NADA AQUI - do nothing here
+```
+
+> ### ⚠️ If you pick option 2, the screen will flicker and may go black
 >
-> That's expected — to measure each core, the graphics driver gets restarted. It happens once per core.
-> **Don't touch the PC during that part.**
+> That's expected: to measure each core, the graphics driver gets restarted. **Don't touch the PC
+> during that part.**
 >
-> There's a small risk the driver hangs instead of coming back. If that happens, **reboot with the
-> power button** and run it again. If you'd rather not take that risk, **answer N to this stage** —
-> stage 5, which is where most of the gain is, works without it.
+> **There is a real risk the driver hangs and doesn't come back** — this already happened on a test
+> machine, and the owner had no display until a hard power-off. This is not a theoretical risk.
+>
+> **If the screen goes black:** press `Win`+`Ctrl`+`Shift`+`B` (restarts the graphics driver). Still
+> black? Move the cable to another port on the card. Still black? Hold the power button 10 s and turn
+> it back on.
+>
+> **The script recovers on its own.** If it detects the measurement stalled, it stops it, cleans up the
+> configuration it left on your card, and tries to bring the display back. And if the PC had to be
+> powered off, the next time you run the script it detects that the previous measurement never
+> finished and **cleans up automatically**, with nothing required from you.
+>
+> Even so: **option 1 is the recommended one**, and that isn't a consolation prize. It delivers the
+> separation — which is the main gain — at zero risk. Measuring only improves the choice of core.
 
 ### 5. Restart the PC
 
