@@ -2,6 +2,91 @@
 
 O que ainda não foi feito, em ordem de impacto, com o ganho esperado de cada item.
 
+Este documento tem duas partes: **pendências da ferramenta** (o que falta construir) e **pendências
+da máquina de referência** (ajustes que nunca foram aplicados nela).
+
+---
+
+# Parte 1 — Pendências da ferramenta
+
+## F1. Medição sem reiniciar o driver ⚠️ a mais valiosa
+
+**Elimina o único risco relevante que sobrou no projeto.** Hoje, descobrir o melhor núcleo exige
+reiniciar o driver de vídeo uma vez por núcleo — e isso já travou uma máquina em campo.
+
+A alternativa não é emular o jogo: é medir **a causa**. Prender uma tarefa de uma thread só em cada
+núcleo, rodar um laço apertado e contar os **engasgos** em microssegundos. Toda interrupção que o
+Windows atende naquele núcleo rouba tempo da tarefa e aparece como pico — o mesmo mecanismo que faz o
+frame demorar.
+
+**Prova de conceito já feita**, num i7-10510U, em 5,6 segundos:
+
+```
+CPU 0  ->  p99.99 = 55.612 us   <- pior
+CPU 4  ->  p99.99 =  5.185 us   <- melhor
+diferenca: 10.7x
+```
+
+A CPU 0 ser a pior é de livro — o Windows direciona a maior parte das interrupções para ela por
+padrão. Sinal forte, medido sem baixar nada e sem risco.
+
+**Como isso muda o desenho:**
+
+1. **Diagnóstico antes do remédio.** Amostrar durante uma partida e **dizer** qual é o gargalo, em vez
+   de perguntar. Quem é GPU-bound sai sem que nada seja alterado — a melhor proteção contra dano é não
+   tocar em máquina que não vai se beneficiar.
+2. **Guardar o "antes" automaticamente**, sem depender de a pessoa lembrar do número que tinha.
+3. **Escolher o núcleo por medição** em vez de dedução — melhor que a opção 1 atual, e sem o risco da
+   opção 2.
+4. **Conferir depois do boot** e comparar. Se piorou ou empatou, tentar o próximo candidato e medir de
+   novo, guardando o estado entre reinícios.
+
+**Se isso funcionar, a opção 2 (AutoGpuAffinity) sai do menu** — ela existe só para escolher o núcleo,
+e passaria a ser a forma pior e mais perigosa de fazer isso. Menos código de recuperação para manter é
+redução de risco por subtração.
+
+> ⚠️ **Regra ao implementar:** o número **não é FPS** e não pode ser apresentado como tal. É
+> interferência em microssegundos. Imprimir "você tinha 100 e agora tem 130 fps" seria chute com cara
+> de medição — exatamente o que este projeto existe para não fazer.
+
+## F2. Detectar e informar o que já está aplicado
+
+Hoje, rodar de novo é seguro mas **silencioso**: o script refaz tudo sem dizer o que já estava lá.
+Deveria abrir com um resumo — "nesta máquina já está aplicado: X, Y, Z" — e oferecer *ajustar*,
+*refazer* ou *desfazer*. Tudo que ele precisa para isso já é legível.
+
+## F3. Suporte real a CPU híbrida
+
+Detectar P-core e E-core de verdade via `GetSystemCpuSetInformation` (campo `EfficiencyClass`).
+Destrava as Intel de 12ª geração em diante, que hoje ficam de fora da parte principal por precaução —
+e que são provavelmente a maioria das máquinas novas.
+
+## F4. Fechar o ponto cego de teste
+
+**35–40% do risco do script mora em código que só uma máquina física exercita.** Duas formas de
+encolher isso:
+
+- **Modo ensaio** (`-Simular`): percorre o fluxo inteiro de perguntas registrando o que *faria*, sem
+  executar nada. Permite ensaiar o script todo em qualquer máquina antes de publicar.
+- **VM** cobre instalador, Process Lasso, camada 2 e fluxo completo. Não cobre travamento real de
+  driver — esse continua intestável.
+
+## F5. Pacote de socorro de um clique
+
+Um `GERAR RELATORIO.bat` ao lado do DESFAZER, que junta log, resultado da medição, estado e a lista de
+dispositivos de vídeo num arquivo só na Área de Trabalho, pronto para a pessoa mandar. O log já ficou
+bom; falta ele chegar até quem pode ler.
+
+## F6. Menores
+
+- Estender a exclusão do ProBalance a outros jogos, não só ao LoL
+- Internacionalização do script (hoje as perguntas são em português)
+- Pinar versão e conferir hash do AutoGpuAffinity, em vez de baixar sempre o "latest"
+
+---
+
+# Parte 2 — Pendências da máquina de referência
+
 ---
 
 ## 1. Confirmar a taxa do monitor ⚠️ maior ganho potencial, custo zero

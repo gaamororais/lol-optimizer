@@ -10,6 +10,7 @@ Instruções de uso ficam no [README da raiz](../README.md).
 | [03-COMO-FUNCIONA-O-LOLBOOST.md](03-COMO-FUNCIONA-O-LOLBOOST.md) | O script por dentro: as 6 etapas, as decisões de projeto e as armadilhas que apareceram medindo |
 | [04-METODO-E-LICOES.md](04-METODO-E-LICOES.md) | O método de diagnóstico, o que se provou **placebo**, o que dá **ban**, e os erros cometidos no caminho |
 | [05-PENDENCIAS.md](05-PENDENCIAS.md) | O que ainda não foi feito, com o ganho esperado de cada item — e o que é troca de segurança por desempenho |
+| [06-HISTORICO-E-DECISOES.md](06-HISTORICO-E-DECISOES.md) | **Por que o projeto está do jeito que está**: as decisões e o motivo de cada uma, as que foram revertidas, os dois incidentes em campo, e o que foi proposto e descartado |
 
 Dados de apoio em [`../exemplo/`](../exemplo/): ranking dos núcleos derivado de 1.058.139 frames do
 PresentMon, a investigação de baseline e um guia de tuning de RAM/PBO.

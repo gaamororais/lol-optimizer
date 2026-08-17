@@ -443,6 +443,7 @@ each wrong guess along the way. **The documents are in Portuguese:**
 | [03-COMO-FUNCIONA-O-LOLBOOST.md](docs/03-COMO-FUNCIONA-O-LOLBOOST.md) | The script from the inside, for reading the code with context |
 | [04-METODO-E-LICOES.md](docs/04-METODO-E-LICOES.md) | The method, what proved to be **placebo**, and what actually gets you banned |
 | [05-PENDENCIAS.md](docs/05-PENDENCIAS.md) | What hasn't been done yet, and how much each item is expected to give |
+| [06-HISTORICO-E-DECISOES.md](docs/06-HISTORICO-E-DECISOES.md) | **Why the project looks the way it does**: every decision and its reason, what got reverted, and the two problems that showed up on a real machine |
 
 The [`exemplo/`](exemplo/) folder has **this** machine's results, so you can see what format to expect —
 **they are not values to copy.** They were measured over 1,058,139 frames.
@@ -453,7 +454,7 @@ it made no difference at all. The difference was in the **worst moments** — th
 worse than the best precisely during the stutters, which is what you actually feel while playing.
 **Looking at the wrong metric almost killed the finding.**
 
-Tests live in [`testes/testar.ps1`](testes/testar.ps1) — 63 checks that run without changing anything on
+Tests live in [`testes/testar.ps1`](testes/testar.ps1) — 79 checks that run without changing anything on
 your machine:
 
 ```bash

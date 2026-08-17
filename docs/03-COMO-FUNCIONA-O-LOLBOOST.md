@@ -296,7 +296,7 @@ quantas regras suas foram mantidas.
 
 #### Os testes
 
-As afirmações acima são cobertas por [`testes/testar.ps1`](../testes/testar.ps1) — **63 casos**:
+As afirmações acima são cobertas por [`testes/testar.ps1`](../testes/testar.ps1) — **79 casos**:
 
 ```bash
 powershell -ExecutionPolicy Bypass -File testes/testar.ps1

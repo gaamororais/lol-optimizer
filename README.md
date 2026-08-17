@@ -445,6 +445,7 @@ derrubou cada palpite errado no caminho:
 | [03-COMO-FUNCIONA-O-LOLBOOST.md](docs/03-COMO-FUNCIONA-O-LOLBOOST.md) | O script por dentro, pra quem quiser ler o código com contexto |
 | [04-METODO-E-LICOES.md](docs/04-METODO-E-LICOES.md) | O método, o que se provou **placebo**, e o que dá ban de verdade |
 | [05-PENDENCIAS.md](docs/05-PENDENCIAS.md) | O que ainda não foi feito, e quanto se espera de cada coisa |
+| [06-HISTORICO-E-DECISOES.md](docs/06-HISTORICO-E-DECISOES.md) | **Por que o projeto está assim**: cada decisão e o motivo, o que foi revertido, e os dois problemas que apareceram em máquina de verdade |
 
 A pasta [`exemplo/`](exemplo/) tem os resultados **desta** máquina, pra você ver que formato esperar —
 **não são valores pra copiar.** Foi medido em cima de 1.058.139 quadros de imagem.
@@ -455,7 +456,7 @@ diferença nenhuma. A diferença estava nos **piores momentos** — o pior núcl
 melhor exatamente nos engasgos, que é o que a gente sente jogando. **Olhar a métrica errada quase
 matou a descoberta.**
 
-Os testes ficam em [`testes/testar.ps1`](testes/testar.ps1) — 63 verificações que rodam sem alterar
+Os testes ficam em [`testes/testar.ps1`](testes/testar.ps1) — 79 verificações que rodam sem alterar
 nada na sua máquina:
 
 ```bash
