@@ -24,13 +24,24 @@ if (-not (Test-Path $ps1)) { throw "nao achei o LoLBoost.ps1 em $ps1" }
 # ---- traz as funcoes do script PUBLICADO usando o parser do PowerShell ----
 # Por AST em vez de regex: nao depende da indentacao do arquivo, entao limpar
 # espacos no script nao quebra os testes em silencio.
-$ast = [System.Management.Automation.Language.Parser]::ParseFile($ps1, [ref]$null, [ref]$null)
+# Os erros de parse TEM que ser capturados. Descartando eles (terceiro [ref]$null,
+# como estava aqui), o AST ainda contem as funcoes mesmo se o script tiver erro de
+# sintaxe - e os testes passariam todos verdes contra um LoLBoost.ps1 que morre na
+# primeira linha em producao. Era a forma mais literal possivel de "testar um
+# caminho diferente do que o codigo publicado faz".
+$errosParse = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile($ps1, [ref]$null, [ref]$errosParse)
+if ($errosParse -and $errosParse.Count -gt 0) {
+    Write-Host "O LoLBoost.ps1 NAO COMPILA - $($errosParse.Count) erro(s) de sintaxe:" -ForegroundColor Red
+    $errosParse | ForEach-Object { Write-Host ("  linha " + $_.Extent.StartLineNumber + ": " + $_.Message) -ForegroundColor Red }
+    exit 1
+}
 $defs = @{}
 $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true) |
     ForEach-Object { $defs[$_.Name] = $_.Extent.Text }
 # O Invoke-Expression tem que rodar no escopo do SCRIPT: dentro de uma funcao, a
 # funcao definida por ele morre quando aquela funcao retorna.
-foreach ($f in 'SetIni','ValorIni','MesclaLista','MascaraAfinidade','EhCpuHibrida','GuidDoPlano','DetectaEncoding','LeIni','EscreveIni','LembraOriginal') {
+foreach ($f in 'SetIni','ValorIni','MesclaLista','MascaraAfinidade','EhCpuHibrida','EhIntelNova','GuidDoPlano','DetectaEncoding','LeIni','EscreveIni','LembraOriginal') {
     if (-not $defs.ContainsKey($f)) { throw "nao achei 'function $f' no LoLBoost.ps1" }
     Invoke-Expression $defs[$f]
 }
@@ -254,6 +265,108 @@ try {
     Checa 'JSON corrompido: trata como primeira execucao' 7 (LembraOriginal 'gdvr' 7)
 } finally {
     Remove-Item $estadoFile -Force -ErrorAction SilentlyContinue
+}
+
+# =====================================================================
+Secao 'I) regras estruturais do script publicado (as licoes dos incidentes)'
+# =====================================================================
+# Estes testes nao exercitam funcoes: eles cobram REGRAS sobre o arquivo publicado,
+# usando o AST. Existem porque as duas falhas em campo tiveram a mesma raiz - uma
+# regra que eu "sabia" e o codigo nao cumpria. Regra que ninguem cobra volta.
+
+$fonte = Get-Content $ps1 -Raw
+
+# 1. Nenhum Start-Process com -Wait. Foi o incidente 2: o instalador em modo
+#    silencioso nao encerra, e -Wait deixou o script preso pra sempre.
+$comWait = $ast.FindAll({
+    param($n)
+    $n -is [System.Management.Automation.Language.CommandAst] -and
+    $n.GetCommandName() -eq 'Start-Process' -and
+    ($n.CommandElements | Where-Object { $_ -is [System.Management.Automation.Language.CommandParameterAst] -and $_.ParameterName -eq 'Wait' })
+}, $true)
+Checa 'nenhum Start-Process usa -Wait (incidente 2)' 0 $comWait.Count
+
+# 2. Restart-PnpDevice nao pode ser CHAMADO: nao existe no Windows 10, e a
+#    recuperacao automatica falharia exatamente na maquina onde ela precisa
+#    funcionar. Checagem por AST, e nao por texto: o script MENCIONA o nome num
+#    comentario, explicando por que nao usa - e comentario nao e chamada.
+$chamaRestartPnp = $ast.FindAll({
+    param($n)
+    $n -is [System.Management.Automation.Language.CommandAst] -and
+    $n.GetCommandName() -eq 'Restart-PnpDevice'
+}, $true)
+Checa 'nao CHAMA Restart-PnpDevice (nao existe no Win10)' 0 $chamaRestartPnp.Count
+
+# 3. New-Item -Force em caminho de registro apaga valores e subchaves da chave
+#    existente. Só pode aparecer dentro da GaranteChave, que protege com Test-Path.
+$newItemRegistro = $ast.FindAll({
+    param($n)
+    $n -is [System.Management.Automation.Language.CommandAst] -and
+    $n.GetCommandName() -eq 'New-Item' -and
+    $n.Extent.Text -match 'HKLM|HKCU'
+}, $true)
+Checa 'nenhum New-Item -Force direto em chave de registro' 0 $newItemRegistro.Count
+
+# 4. O script tem que ser ASCII puro: em PowerShell 5.1 um acento no arquivo vira
+#    mojibake na tela de quem roda. Hoje isso era promessa em comentario.
+$bytes = [IO.File]::ReadAllBytes($ps1)
+$altos = 0
+foreach ($b in $bytes) { if ($b -ge 0x80) { $altos++ } }
+Checa 'script e ASCII puro (nenhum byte >= 0x80)' 0 $altos
+
+# 5. A limpeza da placa TEM que entrar no DESFAZER antes de a medicao comecar. Se o
+#    script morrer durante a medicao, o unico socorro e o arquivo que ja esta em
+#    disco. Esta e a licao do incidente 1, travada por ordem no arquivo.
+$posUndoPlaca = $fonte.IndexOf("AssignmentSetOverride -Force -EA SilentlyContinue")
+$posBench     = $fonte.IndexOf('Start-Process -FilePath $agaExe')
+Checa 'undo da placa e registrado ANTES de iniciar a medicao' $true (($posUndoPlaca -gt 0) -and ($posBench -gt 0) -and ($posUndoPlaca -lt $posBench))
+
+# 6. O marcador da camada 2 tem que ser escrito antes da medicao tambem.
+$posMarcador = $fonte.IndexOf('Set-Content -Path $marcadorBench')
+Checa 'marcador de recuperacao e escrito ANTES da medicao' $true (($posMarcador -gt 0) -and ($posMarcador -lt $posBench))
+
+# 7. O regex de Intel nova vive num lugar so (senao guarda e mensagem divergem).
+$ocorrencias = ([regex]::Matches($fonte, '1\[2-9\]th Gen')).Count
+Checa 'regex de Intel nova aparece uma unica vez no arquivo' 1 $ocorrencias
+
+# =====================================================================
+Secao 'J) deteccao de Intel nova (EhIntelNova)'
+# =====================================================================
+Checa 'i5-12600K'            $true  (EhIntelNova '12th Gen Intel(R) Core(TM) i5-12600K')
+Checa 'Core Ultra 9 285K'    $true  (EhIntelNova 'Intel(R) Core(TM) Ultra 9 285K')
+Checa 'Core 5 120U (Series1)' $true (EhIntelNova 'Intel(R) Core(TM) 5 120U')
+Checa 'Core 7 240H (Series2)' $true (EhIntelNova 'Intel(R) Core(TM) 7 240H')
+Checa 'i5-10400F NAO e nova' $false (EhIntelNova 'Intel(R) Core(TM) i5-10400F CPU @ 2.90GHz')
+Checa 'Ryzen NAO e Intel'    $false (EhIntelNova 'AMD Ryzen 7 5700X 8-Core Processor')
+
+# =====================================================================
+Secao 'K) o DESFAZER gerado precisa ser PowerShell valido'
+# =====================================================================
+# GravaDesfazer monta codigo por concatenacao de string. Caminho com apostrofo
+# (usuario "D'Avila") ou com espaco geraria um arquivo que nao parseia - e ninguem
+# descobre isso ate precisar dele.
+$tmpDir = Join-Path $env:TEMP ("lolboost_undo_" + [IO.Path]::GetRandomFileName())
+New-Item -ItemType Directory -Force $tmpDir | Out-Null
+try {
+    $undoFile       = Join-Path $tmpDir 'DESFAZER.ps1'
+    $atalhoDesfazer = Join-Path $tmpDir 'atalho.bat'
+    $undo = New-Object System.Collections.Generic.List[string]
+    $undo.Add("Copy-Item 'C:\Caminho Com Espaco\game.cfg.bak' 'C:\Caminho Com Espaco\game.cfg' -Force")
+    $undo.Add("Set-ItemProperty 'HKCU:\System\GameConfigStore' GameDVR_Enabled 1")
+    $undo.Add("powercfg /setactive 381b4222-f694-41f0-9685-ff5bb260df2e")
+    $undo.Add("Set-ItemProperty 'HKLM:\SYSTEM\Teste' AssignmentSetOverride ([byte[]]@(2,0)) -Type Binary")
+    foreach ($f in 'GravaDesfazer') {
+        if (-not $defs.ContainsKey($f)) { throw "nao achei 'function $f'" }
+        Invoke-Expression $defs[$f]
+    }
+    GravaDesfazer
+    Checa 'DESFAZER.ps1 foi gerado' $true (Test-Path $undoFile)
+    $errUndo = $null
+    $null = [System.Management.Automation.Language.Parser]::ParseFile($undoFile, [ref]$null, [ref]$errUndo)
+    Checa 'DESFAZER.ps1 gerado e PowerShell valido' 0 $(if ($errUndo) { $errUndo.Count } else { 0 })
+    Checa 'DESFAZER.ps1 exige administrador' $true ((Get-Content $undoFile -Raw) -match 'IsInRole')
+} finally {
+    Remove-Item $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 # =====================================================================

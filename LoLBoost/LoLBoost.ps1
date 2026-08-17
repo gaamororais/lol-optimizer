@@ -82,9 +82,17 @@ function Ask($msg) {
 function Escolha($msg, $valido, $padrao) {
     Write-Host ''
     Write-Host "$msg " -ForegroundColor Yellow -NoNewline
-    $resp = Read-Host
-    if ($valido -notcontains $resp) { $resp = $padrao }
-    Add-Content -Path $logFile -Value ("MENU: $msg   >>> ESCOLHEU: $resp") -ErrorAction SilentlyContinue
+    $cru = Read-Host
+    # Trim: " 2 " era tratado como resposta invalida e virava o padrao em silencio -
+    # a direcao e segura, mas ignorava a intencao da pessoa. E o log tem que guardar
+    # o que ela DIGITOU, nao so o que o script decidiu: numa investigacao de campo, a
+    # diferenca entre "escolheu 1" e "digitou ' 2 ' e eu usei 1" e tudo.
+    $resp = ([string]$cru).Trim()
+    if ($valido -notcontains $resp) {
+        Add-Content -Path $logFile -Value ("MENU: $msg   >>> DIGITOU: '" + $cru + "' (invalido) -> USEI o padrao: $padrao") -ErrorAction SilentlyContinue
+        return $padrao
+    }
+    Add-Content -Path $logFile -Value ("MENU: $msg   >>> DIGITOU: '" + $cru + "' -> USEI: $resp") -ErrorAction SilentlyContinue
     return $resp
 }
 
@@ -192,14 +200,25 @@ function LimpaAfinidadeVideo {
     $limpou = 0
     foreach ($dv in (DispositivosVideo)) {
         $kv = "HKLM:\SYSTEM\CurrentControlSet\Enum\" + $dv.InstanceId + "\Device Parameters\Interrupt Management\Affinity Policy"
-        if (Test-Path $kv) {
-            $temValor = $null -ne (Get-ItemProperty $kv -Name AssignmentSetOverride -EA SilentlyContinue).AssignmentSetOverride
-            if ($temValor) {
-                Remove-ItemProperty -Path $kv -Name AssignmentSetOverride -Force -EA SilentlyContinue
-                Remove-ItemProperty -Path $kv -Name DevicePolicy          -Force -EA SilentlyContinue
-                $limpou++
-            }
+        if (-not (Test-Path $kv)) { continue }
+        # Os dois valores sao tratados de forma INDEPENDENTE. Exigir a mascara pra
+        # limpar deixava passar o caso "morreu no meio da escrita": DevicePolicy=4
+        # gravado e a mascara nao - isso e um "use nucleos especificos" sem dizer
+        # QUAIS, e a funcao reportava "nada preso". Justamente o cenario que ela
+        # existe pra cobrir.
+        $vv = Get-ItemProperty $kv -EA SilentlyContinue
+        $tinha = $false
+        if ($null -ne $vv.AssignmentSetOverride) {
+            Remove-ItemProperty -Path $kv -Name AssignmentSetOverride -Force -EA SilentlyContinue
+            $tinha = $true
         }
+        # so mexe em DevicePolicy se for 4 (IrqPolicySpecifiedProcessors, que e o
+        # que a ferramenta escreve). Outros valores podem ser config legitima.
+        if ($null -ne $vv.DevicePolicy -and [int]$vv.DevicePolicy -eq 4) {
+            Remove-ItemProperty -Path $kv -Name DevicePolicy -Force -EA SilentlyContinue
+            $tinha = $true
+        }
+        if ($tinha) { $limpou++ }
     }
     return $limpou
 }
@@ -249,10 +268,17 @@ function MascaraAfinidade($core) {
 # Hyper-Threading: num Core Ultra 200S (285K = 24C/24T, 8P+16E) threads == cores.
 # Intel 12a geracao em diante entra por PRECAUCAO, porque separar P de E exigiria
 # GetSystemCpuSetInformation. No pior caso pula afinidade numa CPU uniforme.
+# O regex vive numa funcao SO, e as duas coisas que dependem dele (a guarda e a
+# mensagem na tela) chamam essa funcao. Antes ele estava escrito em dois lugares:
+# corrigir um e esquecer o outro faria a guarda e a mensagem discordarem, e o teste
+# continuaria verde porque so cobria a funcao.
+function EhIntelNova($nome) {
+    return ([string]$nome -match '1[2-9]th Gen|Core\(TM\)\s*Ultra|Core\s*Ultra|Core\(TM\)\s*[3579]\s+\d{3}')
+}
+
 function EhCpuHibrida($nome, $cores, $threads) {
-    $smt       = ($threads -eq $cores * 2)
-    $intelNova = ([string]$nome -match '1[2-9]th Gen|Core\(TM\)\s*Ultra|Core\s*Ultra')
-    return ((-not $smt) -and ($threads -ne $cores)) -or $intelNova
+    $smt = ($threads -eq $cores * 2)
+    return ((-not $smt) -and ($threads -ne $cores)) -or (EhIntelNova $nome)
 }
 
 # ---------- admin ----------
@@ -343,7 +369,7 @@ $smt      = ($threads -eq $cores * 2)
 # 12a geracao em diante entra na guarda por PRECAUCAO: no pior caso a afinidade
 # e pulada numa CPU que seria uniforme (um i3-12100 nao tem E-core) - deixa de
 # ganhar, nao perde.
-$intelNova = ([string]$cpu.Name -match '1[2-9]th Gen|Core\(TM\)\s*Ultra|Core\s*Ultra')
+$intelNova = EhIntelNova $cpu.Name
 $hibrida   = EhCpuHibrida $cpu.Name $cores $threads
 
 # Registrar o Windows no log importa mais do que parece: comando que existe numa
@@ -634,6 +660,20 @@ if ($hibrida) {
             'Se este arquivo existir na proxima execucao, a medicao nao terminou.'
         ) -EA SilentlyContinue
 
+        # A limpeza da placa entra no DESFAZER **antes** de a medicao comecar - e
+        # aqui a ordem e o que importa, nao a intencao. Se o script morrer DURANTE
+        # a medicao (janela fechada, Ctrl+C, queda de energia), a camada 1 morre
+        # junto; o unico socorro que sobra e o DESFAZER que ja esta em disco. Ele
+        # precisa ja conter esta linha nesse instante. Registrar depois do
+        # benchmark - como estava - deixava justamente o cenario do incidente 1
+        # sem rede: placa presa e o atalho da Area de Trabalho nao limpava.
+        foreach ($dsp in (DispositivosVideo)) {
+            $kd = "HKLM:\SYSTEM\CurrentControlSet\Enum\" + $dsp.InstanceId + "\Device Parameters\Interrupt Management\Affinity Policy"
+            $undo.Add("Remove-ItemProperty '$kd' AssignmentSetOverride -Force -EA SilentlyContinue")
+            $undo.Add("Remove-ItemProperty '$kd' DevicePolicy -Force -EA SilentlyContinue")
+        }
+        GravaDesfazer
+
         $inicioBench = Get-Date
         Push-Location (Split-Path $agaExe)
 
@@ -677,8 +717,19 @@ if ($hibrida) {
             }
             Say ''
             Say '1. Encerrando a medicao...' Yellow
+            # Kill() mata SO o processo pai. O AutoGpuAffinity orquestra xperf e
+            # PresentMon como filhos, e uma sessao de trace do kernel orfa continua
+            # gravando e BLOQUEIA qualquer medicao futura ("kernel logger is already
+            # running") - inclusive uma nova tentativa deste script. Mata a arvore.
+            try { & taskkill.exe /PID $procAga.Id /T /F 2>$null | Out-Null } catch { }
             try { $procAga.Kill() } catch { }
-            Start-Sleep -Seconds 3
+            Start-Sleep -Seconds 2
+            # e derruba a sessao de trace, se ficou de pe
+            foreach ($cmd in @('-stop','-cancel')) {
+                try { & xperf.exe $cmd 2>$null | Out-Null } catch { }
+            }
+            Get-Process -Name 'xperf','PresentMon','presentmon' -EA SilentlyContinue | Stop-Process -Force -EA SilentlyContinue
+            Start-Sleep -Seconds 2
 
             Say '2. Limpando a configuracao que ela deixou na sua placa...' Yellow
             $n = LimpaAfinidadeVideo
@@ -702,8 +753,20 @@ if ($hibrida) {
         Remove-Item $marcadorBench -Force -EA SilentlyContinue
 
         # ---- analisar os CSVs ----
-        $cap = Get-ChildItem (Join-Path (Split-Path $agaExe) 'captures') -Directory -EA SilentlyContinue |
-               Sort-Object LastWriteTime -Descending | Select-Object -First 1
+        # Se a medicao empacou, os CSVs parciais foram capturados COM o driver
+        # morrendo - sao lixo. Analisar eles imprimiria "MELHOR nucleo: CPU X" e
+        # exportaria uma planilha que o script logo em seguida ignora, porque o
+        # caminho seguro sobrescreve a escolha. Tela e arquivo dizendo uma coisa e
+        # o registro recebendo outra e pior que nao mostrar nada.
+        if ($empacou) {
+            Say 'Nao vou analisar os dados parciais: foram medidos com o driver' Gray
+            Say 'travando, entao nao valem nada.' Gray
+        }
+        $cap = $null
+        if (-not $empacou) {
+            $cap = Get-ChildItem (Join-Path (Split-Path $agaExe) 'captures') -Directory -EA SilentlyContinue |
+                   Sort-Object LastWriteTime -Descending | Select-Object -First 1
+        }
         if ($cap) {
             $res = @()
             foreach ($csv in Get-ChildItem (Join-Path $cap.FullName 'CSVs') -Filter 'CPU-*.csv' -EA SilentlyContinue) {
@@ -736,19 +799,19 @@ if ($hibrida) {
             } else { Say 'Nao consegui ler os resultados do benchmark.' Yellow }
         } else { Say 'Pasta de resultados nao encontrada.' Yellow }
         }   # fecha o if ($agaExe) da checagem de layout do pacote
-    }
 
-    # O AutoGpuAffinity fixa o driver em cada nucleo pra testar e restaura no fim.
-    # Se ele morrer no meio (driver travado), a placa fica PRESA no ultimo nucleo
-    # testado - e o dono nao tem ideia disso. Nosso DESFAZER passa a limpar isso
-    # tambem: se a gente chama a ferramenta, a gente e responsavel pelo que ela
-    # deixa pra tras. Registrado ANTES de rodar o benchmark, de proposito.
-    if ($medir) {
-        foreach ($dsp in (Get-PnpDevice -Class Display -EA SilentlyContinue)) {
-            $kd = "HKLM:\SYSTEM\CurrentControlSet\Enum\" + $dsp.InstanceId + "\Device Parameters\Interrupt Management\Affinity Policy"
-            $undo.Add("Remove-Item '$kd' -Recurse -Force -EA SilentlyContinue")
+        # A medicao pode falhar SEM travar: pacote com layout diferente, ferramenta
+        # saindo com erro na hora, pasta de resultados vazia, CSV ilegivel. Nesses
+        # casos $melhorCore fica nulo, e quem escolheu a opcao 2 - ou seja, quem
+        # topou o RISCO MAIOR - terminava sem separacao nenhuma, pior do que quem
+        # escolheu a opcao 1. Nao pode.
+        if ($null -eq $melhorCore -and -not $empacou) {
+            Say ''
+            Say 'A medicao nao produziu resultado utilizavel.' Yellow
+            Say 'Nao vou te deixar sem nada por causa disso: sigo pelo caminho seguro,' Green
+            Say 'que separa o driver do nucleo do jogo sem depender da medicao.' Green
+            $separarSemMedir = $true
         }
-        GravaDesfazer
     }
 }
 
@@ -827,6 +890,12 @@ if ($null -ne $melhorCore) {
             if ($criouAfin) {
                 $undo.Add("Remove-Item '$k' -Recurse -Force -EA SilentlyContinue")
             } else {
+                # Set-ItemProperty NAO cria chave. E a etapa 3 pode ter registrado
+                # remocoes nesta mesma chave antes desta linha - se ela for apagada
+                # primeiro, estas restauracoes falhariam e o DESFAZER diria
+                # "Revertido" sem ter restaurado nada. Garantir a chave aqui e o que
+                # torna a ordem das entradas irrelevante.
+                $undo.Add("if (-not (Test-Path '$k')) { New-Item '$k' -Force | Out-Null }")
                 if ($null -ne $polAntiga) { $undo.Add("Set-ItemProperty '$k' DevicePolicy $polAntiga -Type DWord") }
                 else                      { $undo.Add("Remove-ItemProperty '$k' DevicePolicy -EA SilentlyContinue") }
                 if ($setAntigo) {
