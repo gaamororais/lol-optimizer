@@ -238,9 +238,15 @@ Required. The graphics driver change only takes effect after a restart.
 
 ### If you want to undo it
 
-A file called **`DESFAZER.ps1`** is created in the same folder, and it exists **from the very first
-change onward** — if the script stops halfway for any reason, the file already covers whatever was
-touched up to that point. Right-click it → **Run with PowerShell** (as administrator) → restart.
+**There's a shortcut on your Desktop called `DESFAZER LoLBoost`** (*desfazer* = undo). Double-click
+it, accept Windows' confirmation, and it reverts everything. Then restart the PC.
+
+It's created **along with the first change**, not at the end — so even if the script stops halfway for
+any reason, the shortcut is already there and already covers whatever was touched up to that point.
+And it deletes itself after reverting, so it doesn't leave junk on your Desktop.
+
+The actual file is `DESFAZER.ps1`, in the same folder as the script, if you'd rather run it from
+there.
 
 It undoes everything the script changed. The only thing it does **not** do is uninstall Process Lasso,
 if the script installed it for you — you remove that from Settings → Apps, like any other program.
@@ -430,7 +436,16 @@ powershell -ExecutionPolicy Bypass -File testes/testar.ps1
 
 ---
 
-## Credits
+## Who made this
+
+Gabriel — I play LoL and make videos about the game at
+**[@pingumonosylas](https://www.youtube.com/@pingumonosylas)** (in Portuguese). This project came out
+of a problem of my own that I refused to accept as "weak PC".
+
+If the script helped you, drop by. And if it **didn't** help, that's worth a comment too — knowing
+which machine it failed on is what makes the next version better.
+
+### Tools used
 
 - [AutoGpuAffinity](https://github.com/valleyofdoom/AutoGpuAffinity) — valleyofdoom (GPL-3.0)
 - [Process Lasso](https://bitsum.com/) — Bitsum

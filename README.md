@@ -238,9 +238,14 @@ Obrigatório. A mudança do driver de vídeo só passa a valer depois de reinici
 
 ### Se quiser desfazer
 
-Um arquivo chamado **`DESFAZER.ps1`** é criado na mesma pasta, e ele existe **desde a primeira
-mudança** — se o script parar no meio por qualquer motivo, o arquivo já cobre o que foi mexido até
-ali. Clique com o botão direito nele → **Executar com o PowerShell** (como administrador) → reinicie.
+**Tem um atalho na sua Área de Trabalho chamado `DESFAZER LoLBoost`.** Dois cliques nele, aceite a
+confirmação do Windows, e ele reverte tudo. Depois reinicie o PC.
+
+Ele é criado **junto com a primeira mudança**, não no fim — então mesmo que o script pare no meio por
+qualquer motivo, o atalho já está lá e já cobre o que foi mexido até ali. E ele se apaga sozinho
+depois de reverter, pra não ficar lixo na sua Área de Trabalho.
+
+O arquivo de verdade é o `DESFAZER.ps1`, na mesma pasta do script, se você preferir rodar de lá.
 
 Ele desfaz tudo o que o script mudou. A única coisa que ele **não** faz é desinstalar o Process
 Lasso, caso o script tenha instalado pra você — isso você remove em Configurações → Aplicativos,
@@ -434,7 +439,16 @@ powershell -ExecutionPolicy Bypass -File testes/testar.ps1
 
 ---
 
-## Créditos
+## Quem fez
+
+Gabriel — jogo LoL e faço vídeos sobre o jogo no
+**[@pingumonosylas](https://www.youtube.com/@pingumonosylas)**. Este projeto saiu de um problema meu
+que eu não conseguia aceitar como "PC fraco".
+
+Se o script te ajudou, passa lá. E se **não** ajudou, também vale comentar — saber em que máquina não
+funcionou é o que faz a próxima versão ser melhor.
+
+### Ferramentas usadas
 
 - [AutoGpuAffinity](https://github.com/valleyofdoom/AutoGpuAffinity) — valleyofdoom (GPL-3.0)
 - [Process Lasso](https://bitsum.com/) — Bitsum

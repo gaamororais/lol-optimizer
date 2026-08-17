@@ -70,6 +70,8 @@ function Ask($msg) { Write-Host ''; Write-Host "$msg [S/N] " -ForegroundColor Ye
 # $ErrorActionPreference='Stop' qualquer falha no meio abortava o script depois
 # de ja ter mexido no registro, no plano de energia e no game.cfg - e sem gerar
 # o arquivo de reversao. Agora ele e regravado a cada mudanca.
+$atalhoDesfazer = Join-Path ([Environment]::GetFolderPath('Desktop')) 'DESFAZER LoLBoost.bat'
+
 function GravaDesfazer {
     $txt = @(
         '# DESFAZER - reverte o que o LoLBoost alterou nesta maquina',
@@ -77,8 +79,36 @@ function GravaDesfazer {
         '# no meio, este arquivo cobre tudo o que ele alterou ate parar.',
         'if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { Write-Host "Rode como Admin"; pause; exit }',
         ''
-    ) + $undo + @('', 'Write-Host "Revertido. Reinicie o PC." -ForegroundColor Green', 'pause')
+    ) + $undo + @(
+        '',
+        'Write-Host "Revertido. Reinicie o PC." -ForegroundColor Green',
+        # limpa o proprio atalho da area de trabalho: depois de reverter ele nao
+        # serve mais pra nada, e deixar lixo na area de trabalho de quem acabou
+        # de desfazer e falta de educacao
+        ("Remove-Item '$atalhoDesfazer' -Force -ErrorAction SilentlyContinue"),
+        'pause'
+    )
     Set-Content -Path $undoFile -Value $txt -ErrorAction SilentlyContinue
+
+    # Atalho na AREA DE TRABALHO. Quem precisa do desfazer costuma estar com
+    # pressa e sem paciencia pra caçar pasta dentro do LOCALAPPDATA - e pode ser
+    # justamente alguem cujo PC acabou de ficar pior. Um clique resolve.
+    if (-not (Test-Path $atalhoDesfazer)) {
+        $bat = @(
+            '@echo off',
+            'title DESFAZER LoLBoost',
+            'echo.',
+            'echo  Isto vai reverter tudo o que o LoLBoost alterou nesta maquina.',
+            'echo.',
+            'net session >nul 2>&1',
+            'if %errorLevel% neq 0 (',
+            "    powershell -NoProfile -Command ""Start-Process '%~f0' -Verb RunAs""",
+            '    exit /b',
+            ')',
+            ("powershell -NoProfile -ExecutionPolicy Bypass -File ""$undoFile""")
+        )
+        Set-Content -Path $atalhoDesfazer -Value $bat -Encoding OEM -ErrorAction SilentlyContinue
+    }
 }
 
 # Cria a chave SEM destruir o que ja existe nela. 'New-Item -Force' numa chave de
@@ -969,7 +999,11 @@ Title '6/6  SCRIPT DE DESFAZER'
 # a final: se o script tivesse morrido no meio, o arquivo ja estaria em disco
 # cobrindo tudo o que havia sido alterado ate ali.
 GravaDesfazer
-Say ("Criado: " + $undoFile) Green
+Say ''
+Say 'SE ALGO FICAR PIOR OU ESTRANHO, e so um clique:' White
+Say '  Area de Trabalho > "DESFAZER LoLBoost"' Green
+Say ''
+Say ("(o arquivo tambem esta em: " + $undoFile + ")") Gray
 Say ("Acoes revertiveis registradas: " + $undo.Count) Gray
 
 Title 'CONCLUIDO'
