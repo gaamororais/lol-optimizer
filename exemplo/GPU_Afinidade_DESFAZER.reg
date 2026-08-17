@@ -1,0 +1,6 @@
+Windows Registry Editor Version 5.00
+
+; Remove a politica de afinidade do driver da RX 9070 XT
+; Volta ao comportamento padrao do Windows
+
+[-HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Enum\PCI\VEN_1002&DEV_7550&SUBSYS_54171849&REV_C0\6&37B354B&0&00000019\Device Parameters\Interrupt Management\Affinity Policy]

@@ -1,0 +1,10 @@
+Windows Registry Editor Version 5.00
+
+; Fixa o driver da RX 9070 XT no CPU 1 (melhor resultado do AutoGpuAffinity)
+; DevicePolicy=4  -> IrqPolicySpecifiedProcessors
+; AssignmentSetOverride=02 -> bitmask do CPU 1
+; Reverter: rodar GPU_Afinidade_DESFAZER.reg
+
+[HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Enum\PCI\VEN_1002&DEV_7550&SUBSYS_54171849&REV_C0\6&37B354B&0&00000019\Device Parameters\Interrupt Management\Affinity Policy]
+"DevicePolicy"=dword:00000004
+"AssignmentSetOverride"=hex:02

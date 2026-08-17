@@ -1,0 +1,147 @@
+=====================================================================
+ INVESTIGAÇÃO PROFUNDA - LoL não crava 240fps
+ 6 agentes de pesquisa | Reddit, GitHub, fóruns, benchmarks, mods
+=====================================================================
+
+>>> VEREDITO PRINCIPAL <<<
+5 dos 6 agentes chegaram INDEPENDENTEMENTE na mesma conclusão:
+110-157 fps em teamfight late game é o BASELINE NORMAL de um 5700X
+no LoL. Não é defeito, não é bug, não é config errada.
+
+Referência de benchmark (mesma arquitetura Zen 3):
+  5800X   = ~315 fps MÉDIOS em LoL 1080p low
+  5700X   = ~290-305 fps médios (5-8% menos clock, mesmo cache)
+  5800X3D = ~397 fps médios (+26%)
+Em LoL, teamfight late game fica em 45-55% da média
+  -> esperado p/ 5700X: ~130-170 fps em teamfight
+  -> você mede 110-157 = DENTRO da faixa, metade inferior
+
+O Process Lasso (+66%) te tirou do "abaixo do normal" e te colocou
+no normal. O headroom que sobra pra um 5700X é ~10-20%, não outro +66%.
+
+=====================================================================
+ O QUE AINDA VALE FAZER (por ordem de impacto real)
+=====================================================================
+
+[1] HVCI / INTEGRIDADE DE MEMÓRIA  ***MAIOR GANHO DISPONÍVEL***
+    Status na sua máquina: LIGADO (confirmado)
+    Evidência: ComputerBase testou 5800X (MESMA arquitetura) + 720p
+    p/ forçar CPU-bound: HVCI custa -6% fps médio e +8% frametime.
+    Pior caso medido: -12% fps / +30% frametime.
+    Tom's Hardware confirma: 5-10% em 15 jogos, é custo de CPU.
+    Ganho estimado no seu caso: +7 a +18 fps NOS VALES (teamfight).
+
+    COMO: Config > Privacidade e segurança > Segurança do Windows >
+          Segurança do dispositivo > Isolamento de núcleo >
+          Integridade de memória = DESLIGADO > REINICIAR
+    Confirmar de verdade no msinfo32 ("Segurança baseada em
+    virtualização" deve dizer "Não habilitada").
+
+    !! CONTRADIÇÃO ENTRE OS AGENTES - LEIA !!
+    Um agente disse que o Vanguard EXIGE HVCI e o jogo não abre.
+    Outro (com fonte melhor) disse que desligar HVCI só te tira do
+    modo "Vanguard On-Demand", e o Vanguard volta ao modo always-on
+    normalmente. Não consegui resolver isso com certeza.
+    RESOLUÇÃO EMPÍRICA: desliga, reinicia, tenta abrir o LoL.
+      - Abriu -> ótimo, mede o ganho.
+      - Deu erro VAN -> religa e pronto. Sem risco de ban nos dois
+        casos (é config do Windows, não é cheat).
+
+[2] AFINIDADE DO DRIVER GRÁFICO (AutoGpuAffinity)  ***NOVIDADE***
+    Isso é o achado mais interessante e que não tínhamos visto:
+    o kernel gráfico / ISR-DPC roda por padrão na CPU0. Se ele estiver
+    caindo no MESMO núcleo lógico onde o Process Lasso prendeu o LoL,
+    vocês estão brigando pelo mesmo núcleo.
+    Ferramenta: github.com/valleyofdoom/AutoGpuAffinity
+    Risco de ban: NENHUM (só grava afinidade do dispositivo no
+    registro e reinicia o driver; não injeta nada, roda fora do jogo)
+    OBJETIVO: colocar o driver gráfico num núcleo físico que NÃO
+    seja um dos que o LoL usa.
+    Ressalva: o benchmark interno dela é GPU-bound (liblava), então
+    valide o ganho no próprio LoL, não no número que ela mostra.
+
+[3] game.cfg - 2 chaves que achei na sua máquina (grátis, sem risco)
+    Na seção [Performance], com o JOGO E CLIENTE FECHADOS:
+       EnableParticleOptimizations=1   <- NÃO EXISTE no seu arquivo,
+                                          precisa ADICIONAR. Controla
+                                          LOD/culling de partícula.
+       HideEyeCandy=1                  <- está 0 hoje (linha 56)
+       EnableHUDAnimations=0           <- está 1 (você reverteu antes)
+    Ganho: unidades de fps, não dezenas. Mas é grátis e sem risco.
+    NÃO adicione DefaultParticleMultithreading=0 (guias antigos
+    mandam isso - é o OPOSTO, joga partícula de volta na main thread).
+
+[4] CAP DE FPS PARA CONSISTÊNCIA (não pra teto)
+    Uncapped com teamfight caindo p/ 110-157 faz o frametime oscilar
+    de 4ms a 9ms - percebido como MUITO pior que o número em si.
+    Teste: capar em ~144 ou ~160 (valor que você SUSTENTA em fight).
+    Não sobe o teto, mas o jogo "sente" mais liso.
+
+[5] CONFIRMAR A ORIGEM DA THREAD A 99% (diagnóstico, 5 min)
+    Process Explorer (Sysinternals) > League of Legends.exe > aba
+    Threads, durante teamfight. Olhar o Start Address da thread a 99%:
+      - Se for League of Legends.exe -> lógica do jogo (esperado)
+      - Se for amdxx64.dll/amdihk64.dll -> aí SIM seria driver AMD
+    (Improvável ser driver: o problema já existia com a RTX 3090.)
+
+=====================================================================
+ O QUE ***NÃO*** FAZER (checado, com motivo)
+=====================================================================
+ X DXVK no LoL .............. BAN. Substituir d3d11.dll em jogo com
+                              Vanguard = modificação de módulo.
+ X cslol-manager / LTK ...... RISCO DE BAN. Usa injeção de DLL; o
+   (mods de skin/partícula)   próprio dev admite gato-e-rato com o
+                              Vanguard. E provavelmente nem ajudaria:
+                              mexe em render, seu gargalo é lógica.
+ X Skin changers antigos .... BAN CONFIRMADO (injeção de memória).
+ X Qualquer injeção/hook .... Special-K, RTSS overlay, limitadores
+                              externos. Use PresentMon (ETW, sem hook)
+                              se precisar medir frametime.
+ X Mexer no Vanguard ........ BAN DE HARDWARE. Nem tentar.
+ X LeagueFPSBoost (GitHub) .. Arquivado em 2023, faz só o que o
+                              Process Lasso já faz, e é pré-Vanguard.
+ X ISLC (limpar standby) .... Placebo com 32GB; pode CAUSAR stutter.
+ X Desligar mitigações
+   Spectre/Meltdown ......... Placebo em AMD Zen 3 pra jogo.
+ X ULPS ..................... Irrelevante (é coisa de CrossFire).
+ X Voltar pro 23H2 .......... ERRADO. O 24H2+ trouxe o fix de branch
+                              prediction que BENEFICIA Zen 3 (+11%
+                              médio em 43 jogos, Hardware Unboxed).
+ X Regressão do KB5066835 ... NÃO É O SEU CASO. Você está no 25H2
+                              build 26200.9168 com updates de ago/2026,
+                              já superou aquela regressão.
+ X Pacotes "otimizadores" ... Zotie, SageTweaks e cia. Snake oil.
+ X MPO (OverlayTestMode) .... Causa stutter/hitch, não platô de fps.
+                              Sua assinatura não bate. Baixa prioridade.
+ X Trocar p/ 5900X/5950X .... NÃO ADIANTA. Mais núcleos não resolve
+                              gargalo single-thread. Só V-Cache.
+
+=====================================================================
+ A VERDADE SOBRE OS 240 FIXOS
+=====================================================================
+- A Riot CONFIRMOU que a lógica central do LoL roda majoritariamente
+  em UMA thread. Não existe flag, cfg ou mod que paralelize isso.
+- A simulação de partículas JÁ roda em thread separada (post de
+  engenharia da Riot). Não há o que "ligar".
+- Não há renderer alternativo: DX9 foi removido na V14.9, DX11 é o
+  único. Não há flags de linha de comando de gráficos/threading.
+- Não vem melhoria: a reescrita ("League Next" / Hextech Engine) só
+  está prevista pra 2027.
+- Configs que sustentam 240 em teamfight são 5800X3D/7800X3D+.
+
+=> Pra cravar 240 até em teamfight, o caminho é 5700X3D ou 5800X3D:
+   - Drop-in no seu AM4 / MSI B550 (atualizar BIOS antes!)
+   - Estimativa: seus 110-157 virariam ~150-210 em teamfight
+   - 5700X3D custa bem menos e entrega ~95% do 5800X3D
+   - Mantém RAM, placa, GPU, fonte. Só troca o CPU.
+
+=====================================================================
+ ORDEM SUGERIDA
+=====================================================================
+ 1. HVCI off + reiniciar + testar se o LoL abre -> medir teamfight
+ 2. game.cfg (3 chaves acima)
+ 3. AutoGpuAffinity (achar núcleo do driver, tirar de cima do LoL)
+ 4. Tuning de RAM 3600 (guia no outro TXT) -> +10-15%
+ 5. PBO / Curve Optimizer
+ 6. Se ainda incomodar: 5700X3D
+=====================================================================

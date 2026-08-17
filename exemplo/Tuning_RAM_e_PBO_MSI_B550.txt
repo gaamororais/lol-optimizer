@@ -1,0 +1,98 @@
+=====================================================================
+ PLANO FINAL CONSOLIDADO (war room filtrada + buscas)
+ RAM 3600 + PBO + software — MSI B550 GAMING PLUS | 5700X | Hynix 2x16
+=====================================================================
+
+REGRAS DE OURO:
+- UMA mudanca por vez. RAM primeiro, PBO depois, software por ultimo.
+- Se nao bootar: a placa volta ao padrao sozinha (2-3 resets) ou
+  limpa o CMOS (jumper JBAT1 / pilha 10s). Nada quebra.
+- Antes de comecar: AIDA64 -> Cache & Memory Benchmark
+  Anota a Latency atual: ______ ns  (baseline p/ comparar)
+
+=====================================================================
+ PARTE 1 - RAM: DDR4-3600 + FCLK 1800
+=====================================================================
+BIOS (DEL) -> F7 Advanced -> menu OC -> OC Explore Mode = EXPERT
+
+ETAPA 1 (frequencia + tensoes de suporte):
+  DRAM Frequency ............ DDR4-3600
+  FCLK Frequency ............ 1800 MHz          <- 1:1, crucial
+  DRAM Voltage .............. 1.40 V
+  Command Rate .............. 1T (2T se nao bootar)
+  Timings primarios ......... Auto (por enquanto)
+
+  Tensoes de suporte (evita WHEA/instabilidade silenciosa c/ dual rank):
+  [AMD Overclocking ou OC -> Voltages]
+  SOC Voltage ............... 1.05 - 1.10 V
+  VDDG CCD .................. 950 mV
+  VDDG IOD .................. 950-1000 mV
+
+  F10 -> salvar. Pode resetar 2-3x sozinho (normal).
+  Windows: ZenTimings -> confirma MCLK 1800 / FCLK 1800 / 1:1
+  TESTE: TestMem5 "Extreme @anta777", 1 ciclo, 0 erros.
+  Erro? -> DRAM 1.42V e repete. Persistiu? -> PLANO B (fim do arquivo).
+  AIDA64 de novo: ______ ns (esperado ~63-66)
+
+ETAPA 2 (timings - so com Etapa 1 100% estavel):
+  OC -> Advanced DRAM Configuration -> DRAM Timing Mode = Link
+
+  ALVO A (realista p/ Hynix CJR/DJR):
+     tCL 16 / tRCD 19 / tRP 19 / tRAS 38 / tRC 58
+  Se falhar treino/TM5 -> ALVO B (teu XMP esticado):
+     tCL 16 / tRCD 20 / tRP 20 / tRAS 40 / tRC 60
+
+  tRFC ...................... 480      <- NAO usa 416 (agressivo p/ CJR)
+                                          Se estavel, tenta 450 depois.
+  DRAM Voltage .............. 1.42 V
+
+  TESTE: TestMem5 de novo, 1 ciclo, 0 erros.
+  AIDA64: ______ ns (meta ~60-63)
+
+PLANO B (se 3600 nao estabilizar de jeito nenhum):
+  DDR4-3200 / FCLK 1600, timings: 16-18-18-36, tRC 54, tRFC 480, 1.40V
+
+=====================================================================
+ PARTE 2 - PBO + CURVE OPTIMIZER (depois da RAM validada)
+=====================================================================
+OC -> (fim da lista) AMD Overclocking -> aceitar aviso -> PBO:
+  Precision Boost Overdrive .... Advanced
+  PBO Limits ................... Motherboard
+  Max CPU Boost Clock Override . +100 MHz (depois testa +200)
+  Curve Optimizer .............. All Cores / Negative / Magnitude 20
+
+  TESTE: OCCT CPU Extreme 30min OU CB23 loop 30min + uso normal.
+  Crash em idle/carga leve = baixa magnitude (20 -> 15).
+  Expectativa honesta: ganho pequeno de media, melhora consistencia.
+  (Teu log mostra clock ja quase sempre em 4650MHz - sem milagre aqui.)
+
+=====================================================================
+ PARTE 3 - SOFTWARE (gratis, direto no gargalo)
+=====================================================================
+[ ] Riot Client: engrenagem -> ao iniciar partida = "Fechar janela"
+    (client e Chromium comendo CPU em background)
+[ ] Adrenalin, perfil especifico do LoL (nao global):
+      Anti-Lag ................. DESLIGADO (so serve GPU-bound; LoL e CPU-bound)
+      FSR / Frame Gen / AFMF ... DESLIGADO
+      Radeon Chill ............. DESLIGADO
+[ ] GameDVR/Game Bar: ja desativado (feito em 02/08)
+[ ] Jogar SEM gravar; se gravar, encoder da GPU (AMF), nunca x264/CPU
+
+OPCIONAL (testar por ultimo, medindo 1% low antes/depois):
+[ ] Process Lasso: League of Legends.exe -> CPU Affinity -> Always ->
+    so nucleos fisicos (0,2,4,6,8,10,12,14). Ajuda frame time em
+    engine single-thread. Se nao medir diferenca, remove.
+
+=====================================================================
+ PARTE 4 - VALIDACAO FINAL
+=====================================================================
+[ ] AIDA64: antes ____ ns -> depois ____ ns
+[ ] ZenTimings print
+[ ] Partida de LoL SEM gravar, HWiNFO/HWMonitor logando CSV
+    -> comparar com o log de 01/08 (thread #15 @99%, 157fps late game)
+
+EXPECTATIVA REALISTA (consolidada das buscas):
+  media +10-15% | 1% lows melhoram mais que a media | menos engasgo
+  240 cravado em teamfight pesada = so com 5800X3D. Isto aqui e o
+  maximo que da pra extrair de graca do 5700X.
+=====================================================================

@@ -1,0 +1,22 @@
+# --- fora do escopo do repositorio (LoL only) ---
+Pal/
+02-CASO-PALWORLD.md
+
+# --- material de trabalho, nao faz parte da ferramenta ---
+DIVULGACAO.md
+
+# --- dados brutos pesados (190 MB de CSV do PresentMon) ---
+exemplo/benchmark-nucleos/
+
+# --- gerados pela execucao do script ---
+LoLBoost/DESFAZER.ps1
+LoLBoost/LoLBoost.log
+LoLBoost/LoLBoost.original.json
+LoLBoost/resultado_nucleos.csv
+LoLBoost/AutoGpuAffinity/
+LoLBoost/aga.zip
+LoLBoost/processlasso_setup.exe
+
+# --- ferramental local ---
+.claude/
+**/.claude/settings.local.json
