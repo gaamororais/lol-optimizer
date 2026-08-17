@@ -4,7 +4,8 @@
     O QUE FAZ:
       1. Detecta o hardware (e ABORTA a parte de afinidade se for CPU hibrida)
       2. Ajustes seguros: GameDVR, plano de energia, game.cfg
-      3. Roda o AutoGpuAffinity e DESCOBRE o melhor nucleo pro driver grafico
+      3. SEPARA o driver de video do nucleo do jogo (achado principal), com
+         medicao opcional pra descobrir QUAL nucleo e o melhor
       4. Fixa o driver grafico nesse nucleo (registro)
       5. Instala e configura o Process Lasso com a afinidade correta
       6. Gera um script de DESFAZER
@@ -91,7 +92,7 @@ function GravaDesfazer {
     Set-Content -Path $undoFile -Value $txt -ErrorAction SilentlyContinue
 
     # Atalho na AREA DE TRABALHO. Quem precisa do desfazer costuma estar com
-    # pressa e sem paciencia pra caçar pasta dentro do LOCALAPPDATA - e pode ser
+    # pressa e sem paciencia pra procurar pasta dentro do LOCALAPPDATA - e pode
     # justamente alguem cujo PC acabou de ficar pior. Um clique resolve.
     if (-not (Test-Path $atalhoDesfazer)) {
         $bat = @(
@@ -413,34 +414,63 @@ if ($riot) {
 }
 
 # =====================================================================
-Title '3/6  DESCOBRIR O MELHOR NUCLEO PARA O DRIVER GRAFICO'
+Title '3/6  SEPARAR O DRIVER DE VIDEO DO NUCLEO DO JOGO'
 # =====================================================================
 
 $melhorCore      = $null
 $plEstavaRodando = $false
+$separarSemMedir = $false
 
 if ($hibrida) {
         Say 'Pulado (nucleos rapidos e lentos misturados - motivo na etapa 1).' Yellow
 } else {
-    Say 'O AutoGpuAffinity testa cada nucleo do processador com o driver de video'
-    Say 'fixado nele, e mede o quanto a imagem fica estavel.'
+    Say 'Aqui esta o achado principal deste projeto: a placa de video TAMBEM da'
+    Say 'trabalho ao processador, e o Windows por padrao deixa esse trabalho cair'
+    Say 'em qualquer nucleo - inclusive no mesmo que o jogo esta lotando.'
     Say ''
-    Say 'IMPORTANTE:' Yellow
-    Say '  - Demora ~10 minutos (30s por nucleo logico)' Yellow
-    Say '  - A TELA VAI PISCAR varias vezes (o driver reinicia a cada teste)' Yellow
-    Say '  - O autor avisa: ha risco do driver travar. Se travar, reinicie o PC.' Yellow
-    Say '  - Feche o Process Lasso antes, se ja estiver instalado' Yellow
-
+    Say 'Tirar o driver de cima do nucleo do jogo e o que resolve. Sao DUAS coisas'
+    Say 'diferentes, e voce escolhe quanto quer:' White
+    Say ''
+    Say '  SEPARAR  = tirar o driver do nucleo do jogo. E de onde vem o ganho.' Green
+    Say '  MEDIR    = descobrir QUAL nucleo e o melhor pro driver. Refinamento' Gray
+    Say '             em cima da separacao - e e a parte que tem risco.' Gray
+    Say ''
+    Say '=== ATENCAO: O RISCO ESTA NA MEDICAO, NAO NA SEPARACAO ===' Yellow
+    Say 'Pra medir, o driver de video precisa ser REINICIADO uma vez por nucleo' Yellow
+    Say ("(no seu caso, $threads vezes). A tela pisca e fica preta por segundos.") Yellow
+    Say 'Existe risco REAL do driver travar e nao voltar - ja aconteceu numa' Red
+    Say 'maquina testada, e o dono ficou sem video ate reiniciar no botao.' Red
+    Say ''
+    Say 'SE A TELA FICAR PRETA E NAO VOLTAR, DECORE ISTO AGORA:' White
+    Say '  1. Aperte  Win + Ctrl + Shift + B   (reinicia o driver de video)' Green
+    Say '  2. Nao voltou? Troque o cabo de porta na placa (HDMI <-> DisplayPort)' Green
+    Say '  3. Nao voltou? Segure o botao de power 10s, desligue e ligue de novo' Green
+    Say '     Depois disso, rode o DESFAZER da Area de Trabalho.' Green
+    Say ''
     if ($integrada) {
+        Say 'AGRAVANTE no seu caso: video integrado costuma ser o UNICO adaptador' Red
+        Say 'da maquina - nao existe placa de reserva se o driver travar.' Red
         Say ''
-        Say 'AGRAVANTE no seu caso: video integrado costuma ser o UNICO adaptador da' Red
-        Say 'maquina. Se o driver travar num dos reinicios, nao existe placa de' Red
-        Say 'reserva - a tela fica preta ate voce reiniciar o PC no botao.' Red
-        Say 'Pular esta etapa e uma escolha legitima: a etapa 5 (que e a que mais' Yellow
-        Say 'rende) funciona sem ela.' Yellow
+    }
+    Say 'ESCOLHA:' White
+    Say '  [1] SEPARAR SEM MEDIR  - recomendado. Sem risco, a tela nao pisca.' Green
+    Say '      Poe o driver num nucleo que o jogo nao vai usar. Nao descobre se' Green
+    Say '      e o MELHOR nucleo, mas garante que ele para de brigar com o jogo.' Green
+    Say '  [2] MEDIR E SEPARAR    - o ideal, se voce topa o risco acima.' Yellow
+    Say ("      Demora ~$([math]::Round($threads * 0.5)) minutos com a tela piscando.") Yellow
+    Say '  [3] NAO FAZER NADA AQUI - a etapa 5 (prioridade) continua.' Gray
+    Write-Host ''
+    Write-Host 'Numero [1/2/3]: ' -ForegroundColor Yellow -NoNewline
+    $escolha = Read-Host
+    if ($escolha -eq '2') { $medir = $true }
+    elseif ($escolha -eq '3') { $medir = $false; Say 'OK - nada sera feito nesta etapa.' Gray }
+    else {
+        $medir = $false
+        $separarSemMedir = $true
+        if ($escolha -ne '1') { Say 'Resposta nao reconhecida - usando a opcao 1 (a segura).' Gray }
     }
 
-    if (Ask 'Baixar e rodar o AutoGpuAffinity agora?') {
+    if ($medir) {
         $agaDir = Join-Path $root 'AutoGpuAffinity'
         $agaExe = Join-Path $agaDir 'AutoGpuAffinity\AutoGpuAffinity.exe'
         if (-not (Test-Path $agaExe)) {
@@ -526,13 +556,38 @@ if ($hibrida) {
             } else { Say 'Nao consegui ler os resultados do benchmark.' Yellow }
         } else { Say 'Pasta de resultados nao encontrada.' Yellow }
         }   # fecha o if ($agaExe) da checagem de layout do pacote
-    } else {
-        Say 'Pulado. Sem isso nao da pra escolher o nucleo com criterio.' Yellow
+    }
+
+    # O AutoGpuAffinity fixa o driver em cada nucleo pra testar e restaura no fim.
+    # Se ele morrer no meio (driver travado), a placa fica PRESA no ultimo nucleo
+    # testado - e o dono nao tem ideia disso. Nosso DESFAZER passa a limpar isso
+    # tambem: se a gente chama a ferramenta, a gente e responsavel pelo que ela
+    # deixa pra tras. Registrado ANTES de rodar o benchmark, de proposito.
+    if ($medir) {
+        foreach ($dsp in (Get-PnpDevice -Class Display -EA SilentlyContinue)) {
+            $kd = "HKLM:\SYSTEM\CurrentControlSet\Enum\" + $dsp.InstanceId + "\Device Parameters\Interrupt Management\Affinity Policy"
+            $undo.Add("Remove-Item '$kd' -Recurse -Force -EA SilentlyContinue")
+        }
+        GravaDesfazer
     }
 }
 
+# Escolha SEM medicao: qualquer nucleo livre resolve a briga com o jogo, e
+# escrever a configuracao NAO reinicia driver nenhum - so passa a valer no boot.
+# Todo o risco de tela preta estava na MEDICAO, nao aqui.
+if ($separarSemMedir -and -not $hibrida) {
+    $melhorCore = if ($smt) { 1 } else { 0 }
+    Say ''
+    Say ("Sem medir: vou colocar o driver de video na CPU $melhorCore, e tirar o jogo") Green
+    Say 'de cima dela. Nao sei dizer se esse e o MELHOR nucleo da sua maquina -' Yellow
+    Say 'pra saber isso so medindo - mas sei que ele deixa de brigar com o jogo,' Green
+    Say 'que e de onde vem o ganho.' Green
+    Say ''
+    Say 'Nenhum driver vai ser reiniciado agora. A tela nao vai piscar.' Green
+}
+
 # =====================================================================
-Title '4/6  FIXAR O DRIVER GRAFICO NO MELHOR NUCLEO'
+Title '4/6  COLOCAR O DRIVER DE VIDEO NO NUCLEO ESCOLHIDO'
 # =====================================================================
 
 $coreDriverFisico = $null
@@ -569,7 +624,8 @@ if ($null -ne $melhorCore) {
     if ($dev) {
         $k = "HKLM:\SYSTEM\CurrentControlSet\Enum\$($dev.InstanceId)\Device Parameters\Interrupt Management\Affinity Policy"
         Say ("Dispositivo: " + $dev.FriendlyName)
-        if (Ask "Fixar o driver grafico na CPU $melhorCore?") {
+            $perg = if ($separarSemMedir) { "Colocar o driver de video na CPU $melhorCore (sem piscar a tela)?" } else { "Colocar o driver de video na CPU $melhorCore, que ganhou na medicao?" }
+            if (Ask $perg) {
             # Guarda o que JA existia: quem ja rodou AutoGpuAffinity ou utilitario
             # de placa-mae pode ter DevicePolicy/AssignmentSetOverride configurados.
             # Antes o undo removia a chave inteira, jogando fora config alheia.
