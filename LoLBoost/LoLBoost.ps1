@@ -65,7 +65,27 @@ function LembraOriginal($nome, $valor) {
 
 function Say($msg, $color = 'Gray') { Write-Host $msg -ForegroundColor $color; Add-Content -Path $logFile -Value $msg -ErrorAction SilentlyContinue }
 function Title($msg) { Write-Host ''; Write-Host ('=' * 68) -ForegroundColor DarkCyan; Write-Host "  $msg" -ForegroundColor Cyan; Write-Host ('=' * 68) -ForegroundColor DarkCyan }
-function Ask($msg) { Write-Host ''; Write-Host "$msg [S/N] " -ForegroundColor Yellow -NoNewline; return (Read-Host) -match '^[SsYy]' }
+# O log tem que guardar a RESPOSTA, nao so a pergunta. Sem isso, quando algo da
+# errado nao ha como saber que caminho a pessoa escolheu - foi exatamente o que
+# faltou pra diagnosticar o primeiro travamento em campo.
+function Ask($msg) {
+    Write-Host ''
+    Write-Host "$msg [S/N] " -ForegroundColor Yellow -NoNewline
+    $resp = Read-Host
+    $sim  = ($resp -match '^[SsYy]')
+    Add-Content -Path $logFile -Value ("PERGUNTA: $msg" + "   >>> RESPONDEU: '" + $resp + "' = " + $(if ($sim) { 'SIM' } else { 'NAO' })) -ErrorAction SilentlyContinue
+    return $sim
+}
+
+# Menu de varias opcoes, com a resposta registrada no log do mesmo jeito.
+function Escolha($msg, $valido, $padrao) {
+    Write-Host ''
+    Write-Host "$msg " -ForegroundColor Yellow -NoNewline
+    $resp = Read-Host
+    if ($valido -notcontains $resp) { $resp = $padrao }
+    Add-Content -Path $logFile -Value ("MENU: $msg   >>> ESCOLHEU: $resp") -ErrorAction SilentlyContinue
+    return $resp
+}
 
 # O DESFAZER precisa existir A PARTIR DA PRIMEIRA alteracao, nao no fim: com
 # $ErrorActionPreference='Stop' qualquer falha no meio abortava o script depois
@@ -190,7 +210,16 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
     Read-Host 'Enter para sair'; exit 1
 }
 
-Set-Content -Path $logFile -Value "LoLBoost - $(Get-Date)" -ErrorAction SilentlyContinue
+# APPEND, nao sobrescreve. O log e a unica evidencia de por que uma execucao
+# falhou - e a reacao natural de quem viu dar errado e rodar de novo, o que
+# apagaria justamente o registro do problema. Cada execucao entra como um bloco
+# novo, com data.
+Add-Content -Path $logFile -Value @(
+    '',
+    ('=' * 70),
+    ("LoLBoost - execucao de " + (Get-Date -Format 'dd/MM/yyyy HH:mm:ss')),
+    ('=' * 70)
+) -ErrorAction SilentlyContinue
 
 # Elevar pode TROCAR de usuario: em PC de familia, se quem joga esta numa conta
 # padrao e o UAC pede a senha de uma conta de administrador, o script passa a
@@ -208,7 +237,9 @@ if ($donoSessao -and ($donoSessao -notmatch ('\\' + [regex]::Escape($env:USERNAM
 }
 
 Title 'LoLBoost - otimizacao de FPS para League of Legends'
-Say 'Este script faz backup de tudo que altera e gera um DESFAZER.ps1 no final.' Gray
+Say 'Ele faz copia de seguranca de tudo que altera, e cria um atalho' Gray
+Say '"DESFAZER LoLBoost" na sua Area de Trabalho desde a PRIMEIRA mudanca -' Gray
+Say 'entao mesmo se algo der errado no meio, voce tem um clique pra voltar.' Gray
 Say ''
 Say 'Com a SUA permissao, ele pode baixar duas ferramentas de terceiros:' Gray
 Say '  - AutoGpuAffinity (github.com/valleyofdoom) - mede o melhor nucleo' Gray
@@ -459,16 +490,10 @@ if ($hibrida) {
     Say '  [2] MEDIR E SEPARAR    - o ideal, se voce topa o risco acima.' Yellow
     Say ("      Demora ~$([math]::Round($threads * 0.5)) minutos com a tela piscando.") Yellow
     Say '  [3] NAO FAZER NADA AQUI - a etapa 5 (prioridade) continua.' Gray
-    Write-Host ''
-    Write-Host 'Numero [1/2/3]: ' -ForegroundColor Yellow -NoNewline
-    $escolha = Read-Host
+    $escolha = Escolha 'Numero [1/2/3]:' @('1','2','3') '1'
     if ($escolha -eq '2') { $medir = $true }
     elseif ($escolha -eq '3') { $medir = $false; Say 'OK - nada sera feito nesta etapa.' Gray }
-    else {
-        $medir = $false
-        $separarSemMedir = $true
-        if ($escolha -ne '1') { Say 'Resposta nao reconhecida - usando a opcao 1 (a segura).' Gray }
-    }
+    else { $medir = $false; $separarSemMedir = $true }
 
     if ($medir) {
         $agaDir = Join-Path $root 'AutoGpuAffinity'
