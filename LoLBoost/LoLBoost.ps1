@@ -246,23 +246,25 @@ if ($integrada) {
 
 if ($hibrida) {
     Say ''
+    Say 'ATENCAO: o seu processador mistura nucleos RAPIDOS com nucleos LENTOS' Yellow
+    Say 'de economia, no mesmo chip. (Intel chama de P-core e E-core.)' Yellow
     if ($intelNova -and $threads -eq $cores) {
-        Say 'ATENCAO: Intel 12a geracao ou mais nova, SEM Hyper-Threading.' Yellow
-        Say 'Pode ser hibrida (P-cores + E-cores) sem dar pra distinguir por aqui:' Yellow
-        Say 'com HT desligado, o numero de threads e igual ao de nucleos e a conta' Yellow
-        Say 'nao denuncia os E-cores.' Yellow
-    } elseif ($intelNova) {
-        Say 'ATENCAO: Intel 12a geracao ou mais nova (pode ter P-cores + E-cores).' Yellow
-    } else {
-        Say 'ATENCAO: CPU HIBRIDA detectada (P-cores + E-cores).' Yellow
+        Say 'No seu caso nao da pra distinguir um do outro so pela contagem, porque' Gray
+        Say 'o Hyper-Threading esta desligado. Entao vou assumir que existem.' Gray
     }
-    Say 'A parte de AFINIDADE sera PULADA por PRECAUCAO - prender o jogo nos' Yellow
-    Say 'E-cores derruba o FPS pela metade. Faca essa parte manualmente (veja o' Yellow
-    Say 'README) se a sua CPU nao tiver E-cores.' Yellow
+    Say ''
+    Say 'POR QUE ISSO IMPORTA: se eu mandasse o jogo para os nucleos LENTOS por' Yellow
+    Say 'engano, o seu FPS cairia PELA METADE. Distinguir com seguranca exige uma' Yellow
+    Say 'tecnica que ainda nao esta pronta aqui, entao NAO vou mexer nos nucleos.' Yellow
+    Say 'Voce deixa de ganhar um pouco, mas nao corre esse risco.' Yellow
+    Say ''
+    Say 'O resto continua: prioridade do jogo e o ajuste do Process Lasso, que e' Green
+    Say 'a parte que nao depende de nucleo nenhum.' Green
 } elseif ($smt) {
-    Say 'Layout: SMT/HT uniforme. Nucleos fisicos = CPUs pares (0,2,4...).' Green
+    Say ("Seus $cores nucleos aparecem como $threads pra o Windows (cada nucleo faz duas") Gray
+    Say 'filas de trabalho). Isso e normal e o script sabe lidar.' Gray
 } else {
-    Say 'Layout: sem SMT/HT. Cada nucleo logico e um nucleo fisico.' Green
+    Say ("Seus $cores nucleos aparecem como $threads pra o Windows: um pra um.") Gray
 }
 
 # =====================================================================
@@ -388,10 +390,10 @@ $melhorCore      = $null
 $plEstavaRodando = $false
 
 if ($hibrida) {
-    Say 'Pulado (CPU hibrida).' Yellow
+        Say 'Pulado (nucleos rapidos e lentos misturados - motivo na etapa 1).' Yellow
 } else {
     Say 'O AutoGpuAffinity testa cada nucleo do processador com o driver de video'
-    Say 'fixado nele, e mede a estabilidade do frametime.'
+    Say 'fixado nele, e mede o quanto a imagem fica estavel.'
     Say ''
     Say 'IMPORTANTE:' Yellow
     Say '  - Demora ~10 minutos (30s por nucleo logico)' Yellow
@@ -574,7 +576,7 @@ if ($null -ne $melhorCore) {
 } else { Say 'Pulado (sem resultado de benchmark).' Yellow }
 
 # =====================================================================
-Title '5/6  PROCESS LASSO - PRIORIDADE E AFINIDADE'
+Title '5/6  PRIORIDADE DO JOGO E DIVISAO DE NUCLEOS'
 # =====================================================================
 
 # Antes, CPU hibrida pulava a etapa 5 INTEIRA - jogando fora a prioridade Alta e
@@ -583,11 +585,19 @@ Title '5/6  PROCESS LASSO - PRIORIDADE E AFINIDADE'
 $aplicarAfinidade = -not $hibrida
 $afinidade = ''
 
+Say 'Nesta etapa eu faco duas coisas, e vale saber o que cada uma e:' White
+Say ''
+Say '  PRIORIDADE = quanta atencao o Windows da pro jogo quando ele e a' Gray
+Say '               concorrer com outros programas.' Gray
+Say '  DIVISAO DE NUCLEOS = dizer ao Windows em QUAIS nucleos do processador' Gray
+Say '               o jogo pode rodar. Serve pra ele nao dividir nucleo com o' Gray
+Say '               driver de video, que e o achado principal deste projeto.' Gray
+Say ''
+
 if ($hibrida) {
-    Say 'Afinidade ...... PULADA (CPU hibrida / Intel 12a+). Configure nos P-cores' Yellow
-    Say '                 manualmente se quiser - veja o README.' Yellow
-    Say 'Prioridade Alta e exclusao do ProBalance CONTINUAM - sao elas que mais' Green
-    Say 'rendem, e nao dependem de afinidade.' Green
+    Say 'A divisao de nucleos vai ser PULADA aqui - motivo explicado na etapa 1' Yellow
+    Say '(nucleos rapidos e lentos misturados). A prioridade continua sendo' Yellow
+    Say 'aplicada normalmente.' Yellow
 }
 
 if ($aplicarAfinidade) {
@@ -600,23 +610,23 @@ if ($aplicarAfinidade) {
     $pouquiNucleos = ($cores -le 4)
     if ($pouquiNucleos) {
         Say ''
-        Say ("Sua CPU tem $cores nucleos fisicos - considerada pequena para esta tecnica.") Yellow
-        Say 'Ela foi medida num 8 nucleos. Restringir o jogo a 1 thread por nucleo' Yellow
-        Say 'fisico aqui pode PIORAR o FPS: o LoL usa mais threads do que sobraria.' Yellow
+        Say ("Seu processador tem $cores nucleos - poucos para esta tecnica.") Yellow
+        Say 'Ela foi medida num processador de 8. Limitar o jogo a menos nucleos aqui' Yellow
+        Say 'pode PIORAR o seu FPS, porque o jogo precisa de mais do que sobraria.' Yellow
         if ($null -ne $coreDriverFisico) {
             # Precisao: o driver JA foi fixado no registro na etapa 4. O que muda
             # aqui e so nao TIRAR esse nucleo da afinidade do jogo. Dizer
             # "nao vou reservar nucleo pro driver" descreveria um estado que nao
             # e o real.
-            Say ("O driver continua fixado na CPU $melhorCore (etapa 4).") Gray
-            Say ("Mas NAO vou tirar o nucleo fisico $coreDriverFisico do jogo: numa CPU pequena") Yellow
-            Say 'perder um nucleo inteiro custa mais do que a separacao rende.' Yellow
+            Say ("O driver de video continua na CPU $melhorCore, como foi medido.") Gray
+            Say 'Mas NAO vou proibir o jogo de usar esse nucleo: com poucos nucleos,' Yellow
+            Say 'tirar um do jogo custa mais do que a separacao rende.' Yellow
             $coreDriverFisico = $null
         }
-        if (-not (Ask 'Aplicar afinidade de CPU no jogo mesmo assim? (recomendado: N)')) {
+        if (-not (Ask 'Limitar os nucleos do jogo mesmo assim? (recomendado: N)')) {
             $aplicarAfinidade = $false
-            Say 'OK - sem afinidade. Prioridade Alta e exclusao do ProBalance seguem,' Green
-            Say 'e sao elas que mais rendem de qualquer forma.' Green
+            Say 'OK - o jogo segue livre pra usar todos os nucleos. A prioridade continua' Green
+            Say 'sendo aplicada.' Green
         }
     }
 
@@ -626,12 +636,12 @@ if ($aplicarAfinidade) {
     # nucleos, 25% do processador). Default = nao reservar.
     if ($integrada -and $null -ne $coreDriverFisico) {
         Say ''
-        Say 'Sua GPU e integrada e divide o mesmo chip e a mesma memoria com a CPU.' Yellow
-        Say ("Reservar o nucleo fisico $coreDriverFisico pro driver custaria " + [math]::Round(100/$cores) + '% do seu') Yellow
-        Say 'processador, e o ganho nesse cenario e duvidoso.' Yellow
-        if (-not (Ask 'Mesmo assim, reservar um nucleo fisico so pro driver? (recomendado: N)')) {
+        Say 'Seu video e integrado: ele divide o mesmo chip e a mesma memoria com o' Yellow
+        Say ("Reservar um nucleo so pro driver custaria " + [math]::Round(100/$cores) + '% do seu processador,') Yellow
+        Say 'processador, e nesse cenario o ganho e duvidoso.' Yellow
+        if (-not (Ask 'Mesmo assim, reservar um nucleo so pro driver? (recomendado: N)')) {
             $coreDriverFisico = $null
-            Say 'OK - o jogo vai poder usar todos os nucleos fisicos.' Green
+            Say 'OK - o jogo vai poder usar todos os nucleos.' Green
         }
     }
 
@@ -645,8 +655,8 @@ if ($aplicarAfinidade) {
             $lista += ($f * $passo)
         }
         $afinidade = ($lista -join ';')
-        Say ("Afinidade calculada para o LoL: $afinidade") White
-        if ($null -ne $coreDriverFisico) { Say ("(nucleo fisico $coreDriverFisico reservado para o driver grafico)") Gray }
+        Say ("Nucleos que o jogo vai poder usar: $afinidade") White
+        if ($null -ne $coreDriverFisico) { Say '(um nucleo ficou reservado para o driver de video)' Gray }
     }
 }
 
@@ -698,7 +708,7 @@ if ($aplicarAfinidade) {
         Say ''
         Say 'Process Lasso nao esta instalado. Ele cuida da prioridade do jogo.' Yellow
         Say 'Ele e da Bitsum (bitsum.com) e e um programa PAGO, mas a versao free' Gray
-        Say 'cobre tudo que este script usa: ProBalance, afinidade de CPU, classe' Gray
+        Say 'cobre tudo que este script usa: prioridade, nucleos e o ProBalance.' Gray
         Say 'de prioridade e prioridade de GPU. (Uso comercial exige compra.)' Gray
         Say 'Sera baixado de dl.bitsum.com e instalado em modo SILENCIOSO (/S).' Gray
         if (Ask 'Baixar e instalar o Process Lasso (versao free) agora?') {
@@ -733,7 +743,7 @@ if ($aplicarAfinidade) {
             # Process Lasso na primeira execucao. Sem esperar por ele, o bloco de
             # configuracao abaixo seria pulado EM SILENCIO, e e justamente a etapa
             # de prioridade e ProBalance.
-            Say 'Aguardando o Process Lasso criar o prolasso.ini...' Gray
+            Say 'Esperando o Process Lasso criar o arquivo de configuracao dele...' Gray
             for ($i = 1; $i -le 12; $i++) {
                 $plIni = Find-ProlassoIni      # procura de novo a cada volta
                 if ($plIni) { break }
@@ -748,9 +758,9 @@ if ($aplicarAfinidade) {
                 Say ("Process Lasso instalado. Config: $plIni") Green
             } else {
                 Say ''
-                Say 'ATENCAO: o Process Lasso foi instalado, mas o prolasso.ini ainda nao' Red
+                Say 'ATENCAO: o Process Lasso foi instalado, mas o arquivo de configuracao' Red
                 Say 'apareceu - entao a parte que MAIS IMPORTA nao foi aplicada:' Red
-                Say '  prioridade Alta + afinidade + exclusao do ProBalance' Red
+        Say '  prioridade do jogo + divisao de nucleos + ajuste do ProBalance' Red
                 Say ''
                 Say 'O QUE FAZER: abra o Process Lasso, feche, e rode o LoLBoost de novo.' Yellow
                 Say 'Na segunda vez ele pula o download e vai direto pra configuracao.' Yellow
@@ -758,7 +768,7 @@ if ($aplicarAfinidade) {
             }   # fecha o else da verificacao de assinatura
         } else {
             Say ''
-            Say 'Pulado. Sem o Process Lasso, a exclusao do ProBalance e a afinidade do' Yellow
+            Say 'Pulado. Sem o Process Lasso, a prioridade do jogo e a divisao de' Yellow
             Say 'jogo NAO sao aplicadas.' Yellow
         }
     }
@@ -771,10 +781,10 @@ if ($aplicarAfinidade) {
         Say 'Vou aplicar no Process Lasso, para o League of Legends:' White
         Say '  - classe de prioridade: Alta' White
         Say '  - exclusao do ProBalance (senao ele REBAIXA o jogo sozinho)' White
-        Say ("  - afinidade de CPU: " + $(if ($afinidade) { $afinidade } else { '(nenhuma)' })) White
+        Say ("  - nucleos que o jogo vai usar: " + $(if ($afinidade) { $afinidade } else { '(nao vou mexer)' })) White
         if ($null -eq $melhorCore -and $afinidade) {
-            Say 'ATENCAO: voce pulou o benchmark, entao esta afinidade NAO foi medida' Yellow
-            Say 'nesta maquina - e o palpite padrao (1 thread por nucleo fisico).' Yellow
+            Say 'ATENCAO: voce pulou a medicao, entao essa divisao NAO foi medida' Yellow
+            Say 'nesta maquina - e o palpite padrao.' Yellow
         }
         Say 'O Process Lasso vai ser fechado e reaberto (o servico sobrescreve o' Gray
         Say 'arquivo ao sair, entao nao da pra editar com ele rodando).' Gray
@@ -802,9 +812,9 @@ if ($aplicarAfinidade) {
         $plBak = "$plIni.LoLBoost.bak"
         if (-not (Test-Path $plBak)) {
             Copy-Item $plIni $plBak -Force -EA SilentlyContinue
-            Say ("backup do prolasso.ini: $plBak") Gray
+            Say ("copia de seguranca da configuracao: $plBak") Gray
         } else {
-            Say ("backup do prolasso.ini ja existia - preservado: $plBak") Gray
+            Say ("copia de seguranca ja existia - preservada: $plBak") Gray
         }
         # O undo TEM que parar o Process Lasso antes de restaurar: o governor
         # sobrescreve o ini ao sair, o que anularia a restauracao.
