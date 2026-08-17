@@ -4,6 +4,7 @@ Pal/
 
 # --- material de trabalho, nao faz parte da ferramenta ---
 DIVULGACAO.md
+PROXIMA-SESSAO.md
 
 # --- dados brutos pesados (190 MB de CSV do PresentMon) ---
 exemplo/benchmark-nucleos/
