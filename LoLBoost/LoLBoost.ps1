@@ -41,6 +41,7 @@ $undo       = New-Object System.Collections.Generic.List[string]
 $estadoDir  = Join-Path $env:LOCALAPPDATA 'LoLBoost'
 if (-not (Test-Path $estadoDir)) { New-Item -ItemType Directory -Force $estadoDir | Out-Null }
 $estadoFile = Join-Path $estadoDir 'LoLBoost.original.json'
+$marcadorBench = Join-Path $estadoDir 'medicao-em-andamento.txt'
 
 # Estado ORIGINAL da maquina, gravado na PRIMEIRA execucao e nunca sobrescrito.
 # Sem isso, rodar o script duas vezes fazia ele capturar como "valor anterior" o
@@ -167,6 +168,53 @@ function DetectaEncoding($caminho) {
     }
 }
 
+# ---------------------------------------------------------------------
+# RECUPERACAO DE DRIVER TRAVADO
+#
+# O benchmark reinicia o driver de video uma vez por nucleo. Se ele travar e nao
+# voltar, a tela fica preta e a pessoa nao tem como ler nada - e o benchmark
+# deixa a placa PRESA no ultimo nucleo testado.
+#
+# Duas camadas, porque uma nao cobre o pior caso:
+#   1. Vigia durante a medicao: detecta que parou de progredir, encerra, limpa e
+#      tenta trazer o video de volta sozinho.
+#   2. Marcador em disco: se o PC precisou ser desligado no botao, a camada 1
+#      morre junto. Na PROXIMA execucao o script ve o marcador, sabe que a
+#      medicao anterior nao terminou, e limpa automaticamente.
+# ---------------------------------------------------------------------
+
+function DispositivosVideo {
+    return @(Get-PnpDevice -Class Display -EA SilentlyContinue |
+             Where-Object { $_.FriendlyName -notmatch 'B.sic|Remote|Mirror|Espelh' })
+}
+
+function LimpaAfinidadeVideo {
+    $limpou = 0
+    foreach ($dv in (DispositivosVideo)) {
+        $kv = "HKLM:\SYSTEM\CurrentControlSet\Enum\" + $dv.InstanceId + "\Device Parameters\Interrupt Management\Affinity Policy"
+        if (Test-Path $kv) {
+            $temValor = $null -ne (Get-ItemProperty $kv -Name AssignmentSetOverride -EA SilentlyContinue).AssignmentSetOverride
+            if ($temValor) {
+                Remove-ItemProperty -Path $kv -Name AssignmentSetOverride -Force -EA SilentlyContinue
+                Remove-ItemProperty -Path $kv -Name DevicePolicy          -Force -EA SilentlyContinue
+                $limpou++
+            }
+        }
+    }
+    return $limpou
+}
+
+function TentaVoltarVideo {
+    foreach ($dv in (DispositivosVideo)) {
+        try { & pnputil.exe /restart-device ('"' + $dv.InstanceId + '"') 2>$null | Out-Null } catch { }
+    }
+}
+
+function EventosDriverTravou($desde) {
+    # 4101 = "o driver de video parou de responder e se recuperou"
+    return @(Get-WinEvent -FilterHashtable @{LogName='System'; Id=4101; StartTime=$desde} -EA SilentlyContinue)
+}
+
 function LeIni($caminho)          { return [IO.File]::ReadAllLines($caminho, (DetectaEncoding $caminho)) }
 function EscreveIni($caminho, $linhas, $enc) {
     if (-not $enc) { $enc = DetectaEncoding $caminho }
@@ -221,6 +269,35 @@ Add-Content -Path $logFile -Value @(
     ('=' * 70)
 ) -ErrorAction SilentlyContinue
 
+# ---------- CAMADA 2 da recuperacao: sobreviveu ao desligamento no botao? ----------
+# Se este marcador existe, a execucao anterior comecou a medir e NUNCA terminou -
+# ou seja, travou de um jeito que impediu qualquer limpeza (driver morto, tela
+# preta, power de 10s). A placa provavelmente ficou presa num nucleo, e o dono nao
+# tem ideia disso. Limpa agora, sem pedir nada, e explica.
+if (Test-Path $marcadorBench) {
+    $quando = (Get-Content $marcadorBench -EA SilentlyContinue | Select-Object -First 1)
+    Write-Host ''
+    Write-Host ('=' * 68) -ForegroundColor Red
+    Write-Host '  RECUPERACAO AUTOMATICA' -ForegroundColor Red
+    Write-Host ('=' * 68) -ForegroundColor Red
+    Say ''
+    Say 'Vi que uma medicao anterior comecou e nao terminou:' Yellow
+    Say ("  $quando") Gray
+    Say 'Isso normalmente significa que o driver de video travou naquela vez.' Yellow
+    Say 'Quando isso acontece, a placa fica presa num nucleo especifico - e isso' Yellow
+    Say 'pode deixar o PC engasgado sem ninguem saber por que.' Yellow
+    Say ''
+    $n = LimpaAfinidadeVideo
+    if ($n -gt 0) {
+        Say ("LIMPEI a configuracao presa em $n placa(s) de video.") Green
+        Say 'Reinicie o PC quando puder, pra ela voltar ao normal por completo.' Yellow
+    } else {
+        Say 'Conferi e nao havia nada preso - sua placa ja estava normal.' Green
+    }
+    Remove-Item $marcadorBench -Force -EA SilentlyContinue
+    Say ''
+}
+
 # Elevar pode TROCAR de usuario: em PC de familia, se quem joga esta numa conta
 # padrao e o UAC pede a senha de uma conta de administrador, o script passa a
 # rodar COMO o admin. Ai o HKCU (GameDVR) e o AppData que ele mexe sao do admin,
@@ -266,6 +343,11 @@ $smt      = ($threads -eq $cores * 2)
 $intelNova = ([string]$cpu.Name -match '1[2-9]th Gen|Core\(TM\)\s*Ultra|Core\s*Ultra')
 $hibrida   = EhCpuHibrida $cpu.Name $cores $threads
 
+# Registrar o Windows no log importa mais do que parece: comando que existe numa
+# versao pode nao existir na outra (Restart-PnpDevice nao existe no Windows 10, por
+# exemplo). Sem isso no log, diagnosticar um problema de outra maquina e adivinhar.
+$so = Get-CimInstance Win32_OperatingSystem -EA SilentlyContinue
+Say ("Windows ........ " + $so.Caption + " (build " + [Environment]::OSVersion.Version.Build + ", idioma " + (Get-Culture).Name + ")") White
 Say ("CPU ............ " + $cpu.Name) White
 Say ("Nucleos ........ $cores fisicos / $threads logicos") White
 $gpus = @(Get-CimInstance Win32_VideoController | Where-Object { $_.Name -notmatch 'B.sic|Remote|Mirror|Espelh' })
@@ -542,26 +624,79 @@ if ($hibrida) {
         Say 'Rodando o benchmark... nao mexa no PC. A tela vai piscar.' Yellow
         Say 'SE ele pedir "press ENTER to start", aperte Enter uma vez - depois disso' Yellow
         Say 'nao toque mais em nada ate ele terminar.' Yellow
+        # CAMADA 2: marca em disco que a medicao COMECOU. Se o PC precisar ser
+        # desligado no botao, a proxima execucao ve este arquivo e limpa sozinha.
+        Set-Content -Path $marcadorBench -Value @(
+            ("medicao iniciada em " + (Get-Date -Format 'dd/MM/yyyy HH:mm:ss')),
+            'Se este arquivo existir na proxima execucao, a medicao nao terminou.'
+        ) -EA SilentlyContinue
+
+        $inicioBench = Get-Date
         Push-Location (Split-Path $agaExe)
-        # -Wait puro nao serve: se o driver de video travar no meio da medicao, o
-        # AutoGpuAffinity nunca encerra e o script fica preso pra sempre - foi o que
-        # aconteceu numa maquina real. Limite generoso (1 min por nucleo + 5 min de
-        # folga) e, se estourar, encerra e segue. A limpeza da afinidade da placa
-        # ja esta registrada no DESFAZER desde antes de comecar.
-        $limiteSeg = [int](($threads * 60) + 300)
-        $procAga = Start-Process -FilePath $agaExe -PassThru -NoNewWindow
-        if (-not $procAga.WaitForExit($limiteSeg * 1000)) {
-            Say ''
-            Say ("O benchmark passou de $([math]::Round($limiteSeg / 60)) minutos sem terminar.") Red
-            Say 'Isso costuma significar que o driver de video travou. Vou encerrar e' Red
-            Say 'seguir sem o resultado da medicao.' Red
-            Say ''
-            Say 'IMPORTANTE: rode o DESFAZER da Area de Trabalho e REINICIE - ele limpa' Yellow
-            Say 'a configuracao que o benchmark deixou na sua placa de video.' Yellow
-            try { $procAga.Kill() } catch { }
-            Start-Sleep -Seconds 3
+
+        # CAMADA 1: vigia por PROGRESSO, nao so por tempo total. O AutoGpuAffinity
+        # grava um CSV por nucleo testado; se pararem de aparecer, ele empacou -
+        # tipicamente porque o driver de video travou e nao voltou. Detectar isso
+        # em 2 minutos e melhor que esperar o limite total de 17.
+        $capturesDir = Join-Path (Split-Path $agaExe) 'captures'
+        $limiteSeg   = [int](($threads * 60) + 300)
+        $procAga     = Start-Process -FilePath $agaExe -PassThru -NoNewWindow
+        $assinatura  = ''
+        $semProgresso = 0
+        $totalSeg     = 0
+        $empacou      = $false
+
+        while (-not $procAga.HasExited) {
+            Start-Sleep -Seconds 10
+            $totalSeg += 10
+            $arqs = @(Get-ChildItem $capturesDir -Recurse -Filter 'CPU-*.csv' -EA SilentlyContinue)
+            $nova = '' + $arqs.Count
+            if ($arqs.Count -gt 0) {
+                $nova += '|' + (($arqs | Sort-Object LastWriteTime -Descending | Select-Object -First 1).LastWriteTime.Ticks)
+            }
+            if ($nova -ne $assinatura) { $assinatura = $nova; $semProgresso = 0 } else { $semProgresso += 10 }
+
+            # 90s de carencia no inicio: ele demora um pouco pra gerar o primeiro CSV
+            if ($totalSeg -gt 90 -and $semProgresso -ge 150) { $empacou = $true; break }
+            if ($totalSeg -ge $limiteSeg) { $empacou = $true; break }
         }
         Pop-Location
+
+        if ($empacou) {
+            Say ''
+            Say '=== A MEDICAO EMPACOU - RECUPERANDO SOZINHO ===' Red
+            $tdr = EventosDriverTravou $inicioBench
+            if ($tdr.Count -gt 0) {
+                Say ("O Windows registrou $($tdr.Count) evento(s) de driver de video travando") Red
+                Say 'durante a medicao. Era isso mesmo.' Red
+            } else {
+                Say ("Ficou $([math]::Round($semProgresso / 60)) min sem progresso nenhum. Tratando como driver travado.") Red
+            }
+            Say ''
+            Say '1. Encerrando a medicao...' Yellow
+            try { $procAga.Kill() } catch { }
+            Start-Sleep -Seconds 3
+
+            Say '2. Limpando a configuracao que ela deixou na sua placa...' Yellow
+            $n = LimpaAfinidadeVideo
+            Say ("   " + $(if ($n -gt 0) { "limpei $n placa(s)" } else { 'nada preso' })) Gray
+
+            Say '3. Tentando trazer o video de volta...' Yellow
+            TentaVoltarVideo
+            Start-Sleep -Seconds 5
+            $st = @(DispositivosVideo | ForEach-Object { $_.FriendlyName + '=' + $_.Status })
+            Say ("   estado agora: " + ($st -join ', ')) Gray
+            Say ''
+            Say 'SE A TELA AINDA ESTIVER PRETA: Win + Ctrl + Shift + B. Se nao voltar,' Yellow
+            Say 'segure o power 10s e ligue de novo - a limpeza acima JA foi gravada,' Yellow
+            Say 'entao sua placa nao vai ficar presa em nucleo nenhum.' Yellow
+            Say ''
+            Say 'Vou seguir sem o resultado da medicao, pelo caminho seguro.' Green
+            $separarSemMedir = $true
+        }
+
+        # medicao terminou (bem ou mal): o marcador nao serve mais
+        Remove-Item $marcadorBench -Force -EA SilentlyContinue
 
         # ---- analisar os CSVs ----
         $cap = Get-ChildItem (Join-Path (Split-Path $agaExe) 'captures') -Directory -EA SilentlyContinue |
